@@ -17,25 +17,66 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Create a template for the expected response structure
 const responseTemplate = {
-  questions: [],
+  questions: [
+    {
+      number: 0,
+      accuracy: false,
+      score: 0, // Add individual question score
+      processEvaluation: "",
+      completenessEvaluation: "",
+      presentationEvaluation: "",
+      feedback: "",
+      commonMistakes: [], // Add common mistakes identification
+      conceptsCovered: [], // Add concepts tested in this question
+      learningObjectives: [], // Add learning objectives addressed
+      remedialSuggestions: [], // Add specific improvement suggestions
+      challengeExtensions: [], // Add challenge problems for advanced students
+    },
+  ],
   overallAssessment: {
     totalScore: 0,
     technicalSkills: {
       score: 0,
       strengths: [],
       weaknesses: [],
+      progressIndicators: {}, // Track progress in specific skill areas
     },
     conceptualUnderstanding: {
       score: 0,
       strengths: [],
       weaknesses: [],
+      keyConceptsMastery: {}, // Track mastery of key concepts
     },
     majorStrengths: [],
     areasForImprovement: [],
     recommendations: [],
     teacherSummary: "",
+    learningPath: {
+      // Add personalized learning path
+      shortTerm: [],
+      mediumTerm: [],
+      longTerm: [],
+    },
+    skillGaps: {
+      // Track specific skill gaps
+      critical: [],
+      moderate: [],
+      minor: [],
+    },
+    nextSteps: {
+      // Specific next steps
+      practice: [],
+      review: [],
+      advance: [],
+    },
+  },
+  meta: {
+    subjectAlignment: [], // Alignment with curriculum standards
+    difficultyDistribution: {}, // Distribution of question difficulty
+    conceptCoverage: {}, // Coverage of different concepts
+    timeSpent: 0, // Estimated time spent
+    complexityMetrics: {}, // Complexity analysis of solutions
   },
 };
 
@@ -115,21 +156,77 @@ async function analyzeWithClaude(text, subject) {
         text.slice(0, maxChunkSize) + "\n[Content truncated for length]";
     }
 
-    const mathSpecificPrompt = `You are an experienced ${subject} teacher grading a student's assignment. Analyze each question and provide detailed feedback.
+    const enhancedPrompt = `You are an experienced ${subject} teacher using an advanced AI-powered grading system. Analyze this assignment comprehensively.
 
 Here's the student's assignment:
 ${analysisText}
 
-Provide a detailed analysis focusing on:
-1. Technical accuracy (correctness, calculations, notation)
-2. Mathematical process (logic, method selection, reasoning)
-3. Completeness (steps shown, explanations, justifications)
-4. Presentation (organization, readability, notation)
+Provide a detailed analysis that includes:
 
-Return ONLY a valid JSON object with NO markdown or formatting.
+1. Per Question Analysis:
+   - Accuracy and scoring
+   - Detailed process evaluation
+   - Completeness assessment
+   - Presentation evaluation
+   - Specific feedback
+   - Common mistakes identification
+   - Concepts being tested
+   - Learning objectives addressed
+   - Remedial suggestions
+   - Challenge extensions for mastery
 
-Use this EXACT structure (do not deviate or add fields):
-${JSON.stringify(responseTemplate, null, 2)}`;
+2. Overall Assessment:
+   - Technical skills evaluation with progress indicators
+   - Conceptual understanding with mastery tracking
+   - Detailed strengths and weaknesses
+   - Skill gap analysis (critical/moderate/minor)
+   - Personalized learning path recommendations
+   - Next steps for improvement
+
+3. Meta Analysis:
+   - Alignment with curriculum standards
+   - Question difficulty distribution
+   - Concept coverage analysis
+   - Time management assessment
+   - Solution complexity evaluation
+
+Your response must be a precise JSON object matching this structure:
+${JSON.stringify(responseTemplate, null, 2)}
+
+Focus on providing actionable insights that will help both teacher and student understand:
+- Current mastery level
+- Specific areas needing attention
+- Clear path for improvement
+- Advanced challenges for growth
+
+Each evaluation should be detailed, specific, and constructive, including:
+1. For each question:
+   - Individual scoring and assessment
+   - Specific error analysis and common misconceptions
+   - Targeted improvement strategies
+   - Advanced challenge suggestions
+
+2. For technical skills:
+   - Clear progress indicators for each skill area
+   - Detailed breakdown of strengths/weaknesses
+   - Specific examples from the student's work
+
+3. For conceptual understanding:
+   - Mastery level for each key concept
+   - Identification of knowledge gaps
+   - Connections between related concepts
+
+4. For learning path:
+   - Short-term goals (next 1-2 weeks)
+   - Medium-term objectives (next 1-2 months)
+   - Long-term development plan
+
+5. For meta-analysis:
+   - Curriculum alignment details
+   - Time management patterns
+   - Solution approach analysis
+
+IMPORTANT: Your response must follow the exact JSON structure provided, with no additional text or formatting.`;
 
     const completion = await anthropic.messages.create({
       model: "claude-3-sonnet-20240229",
@@ -138,7 +235,7 @@ ${JSON.stringify(responseTemplate, null, 2)}`;
         {
           role: "user",
           content:
-            mathSpecificPrompt +
+            enhancedPrompt +
             '\n\nIMPORTANT: Your response must be ONLY a valid JSON object. Do not include any text, markdown, or formatting before or after the JSON. The response should start with "{" and end with "}".',
         },
       ],

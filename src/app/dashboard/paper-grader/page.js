@@ -30,6 +30,7 @@ import { QuestionAnalysis } from "../components/Analysis-Results";
 import { TechnicalSkills } from "../components/Analysis-Results";
 import { ConceptualUnderstanding } from "../components/Analysis-Results";
 import { OverallAssessment } from "../components/Analysis-Results";
+import { AnalysisDashboard } from "../components/Analysis-Results/AnalysisDashboard";
 // Constants
 const ALLOWED_FILE_TYPES = {
   "application/pdf": "PDF",
@@ -255,16 +256,66 @@ export default function PaperAnalyzerPage() {
         overall_assessment: analysisResult.overallAssessment,
         file_name: file.name,
         analyzed_at: new Date().toISOString(),
+        meta: {
+          conceptCoverage: analysisResult.meta?.conceptCoverage || {},
+          difficultyDistribution:
+            analysisResult.meta?.difficultyDistribution || {},
+          timeSpent: analysisResult.meta?.timeSpent || 0,
+          complexityMetrics: analysisResult.meta?.complexityMetrics || {},
+        },
+        learning_path: {
+          shortTerm:
+            analysisResult.overallAssessment.learningPath?.shortTerm || [],
+          mediumTerm:
+            analysisResult.overallAssessment.learningPath?.mediumTerm || [],
+          longTerm:
+            analysisResult.overallAssessment.learningPath?.longTerm || [],
+        },
+        skill_gaps: {
+          critical: analysisResult.overallAssessment.skillGaps?.critical || [],
+          moderate: analysisResult.overallAssessment.skillGaps?.moderate || [],
+          minor: analysisResult.overallAssessment.skillGaps?.minor || [],
+        },
+        concepts_covered: analysisResult.meta?.conceptCoverage || [],
       });
 
       if (error) throw error;
       console.log("Analysis saved to database");
+
+      // Update student progress
+      await updateStudentProgress(analysisResult);
     } catch (error) {
       console.error("Error saving analysis:", error);
       toast.error("Failed to save analysis results", {
         description:
           "The analysis completed but couldn't be saved to your history",
       });
+    }
+  }
+
+  // Helper function to update student progress
+  async function updateStudentProgress(analysisResult) {
+    try {
+      const progressData = {
+        student_id: studentId,
+        paper_analysis_id: analysisResult.paperAnalysisId,
+        concept_mastery:
+          analysisResult.overallAssessment.conceptualUnderstanding
+            .keyConceptsMastery,
+        skill_progress:
+          analysisResult.overallAssessment.technicalSkills.progressIndicators,
+        created_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from("student_progress")
+        .insert(progressData);
+
+      if (error) throw error;
+      console.log("Student progress updated successfully");
+    } catch (error) {
+      console.error("Error updating student progress:", error);
+      // Don't throw here, just log the error as this is a secondary operation
     }
   }
 
@@ -355,17 +406,31 @@ export default function PaperAnalyzerPage() {
             </Button>
           </div>
 
-          {/* Analysis Results */}
+          {/* Analysis Results and Dashboard */}
           {result && (
-            <AnalysisResults
-              result={result}
-              components={{
-                QuestionAnalysis,
-                TechnicalSkills,
-                ConceptualUnderstanding,
-                OverallAssessment,
-              }}
-            />
+            <div className="space-y-8">
+              {/* Traditional Analysis Results */}
+              <AnalysisResults
+                result={result}
+                components={{
+                  QuestionAnalysis,
+                  TechnicalSkills,
+                  ConceptualUnderstanding,
+                  OverallAssessment,
+                }}
+              />
+
+              {/* New Analysis Dashboard */}
+              <div className="mt-8">
+                <CardHeader>
+                  <CardTitle>Analysis Dashboard</CardTitle>
+                  <CardDescription>
+                    Visual representation of student performance and progress
+                  </CardDescription>
+                </CardHeader>
+                <AnalysisDashboard analysisData={result} />
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

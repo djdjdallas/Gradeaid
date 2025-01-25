@@ -3,7 +3,7 @@ import { QuestionAnalysis } from "./QuestionAnalysis";
 import { TechnicalSkills } from "./TechnicalSkills";
 import { ConceptualUnderstanding } from "./ConceptualUnderstanding";
 import { OverallAssessment } from "./OverallAssessment";
-
+import { AnalysisDashboard } from "./AnalysisDashboard";
 export function AnalysisResults({ result }) {
   const safeArray = (arr) => (Array.isArray(arr) ? arr : []);
 
@@ -49,4 +49,5 @@ export {
   TechnicalSkills,
   ConceptualUnderstanding,
   OverallAssessment,
+  AnalysisDashboard,
 };
