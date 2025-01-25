@@ -31,6 +31,7 @@ import { TechnicalSkills } from "../components/Analysis-Results";
 import { ConceptualUnderstanding } from "../components/Analysis-Results";
 import { OverallAssessment } from "../components/Analysis-Results";
 import { AnalysisDashboard } from "../components/Analysis-Results/AnalysisDashboard";
+import { OriginalProblem } from "../components/Analysis-Results";
 // Constants
 const ALLOWED_FILE_TYPES = {
   "application/pdf": "PDF",
@@ -207,11 +208,20 @@ export default function PaperAnalyzerPage() {
       setAnalyzing(true);
       setError(null);
 
+      // First, read the file content
+      const fileText = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = (e) => reject(e);
+        reader.readAsText(file);
+      });
+
       const formData = new FormData();
       formData.append("file", file);
       formData.append("studentId", studentId);
       formData.append("subject", subject);
       formData.append("teacherId", teacherProfile.id);
+      formData.append("originalText", fileText);
 
       const response = await fetch("/api/analyze", {
         method: "POST",
@@ -224,8 +234,8 @@ export default function PaperAnalyzerPage() {
         throw new Error(responseData.error || "Analysis failed");
       }
 
-      setResult(responseData);
-      await saveAnalysisResult(responseData);
+      setResult({ ...responseData, originalText: fileText });
+      await saveAnalysisResult(responseData, fileText);
 
       toast.success("Paper analyzed successfully");
     } catch (error) {
@@ -412,6 +422,7 @@ export default function PaperAnalyzerPage() {
               {/* Traditional Analysis Results */}
               <AnalysisResults
                 result={result}
+                originalText={result.originalText}
                 components={{
                   QuestionAnalysis,
                   TechnicalSkills,

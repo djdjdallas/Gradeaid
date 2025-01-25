@@ -292,6 +292,7 @@ IMPORTANT: Your response must follow the exact JSON structure provided, with no 
   }
 }
 
+// In your route.js
 export async function POST(req) {
   console.log("Received POST request to /api/analyze");
 
@@ -301,14 +302,6 @@ export async function POST(req) {
     const studentId = formData.get("studentId");
     const subject = formData.get("subject");
     const teacherId = formData.get("teacherId");
-
-    // Log received data
-    console.log("Received analysis request:", {
-      fileName: file?.name,
-      studentId,
-      subject,
-      teacherId,
-    });
 
     // Validate inputs
     if (!file || !studentId || !subject || !teacherId) {
@@ -327,20 +320,11 @@ export async function POST(req) {
       );
     }
 
-    // Extract text from file
-    console.log("Extracting text from file...");
+    // Extract text and analyze
     const text = await extractTextFromFile(file);
-
-    if (!text || text.trim().length === 0) {
-      throw new Error("No text content could be extracted from the file");
-    }
-
-    // Analyze with Claude
-    console.log("Starting analysis with Claude...");
     const analysisResult = await analyzeWithClaude(text, subject);
 
-    // Save to database
-    console.log("Saving analysis results to database...");
+    // First, save the paper analysis
     const { data: paperData, error: paperError } = await supabase
       .from("paper_analyses")
       .insert({
@@ -353,21 +337,49 @@ export async function POST(req) {
         overall_assessment: analysisResult.overallAssessment,
         file_name: file.name,
         analyzed_at: new Date().toISOString(),
+        meta: analysisResult.meta || {},
+        learning_path: analysisResult.overallAssessment.learningPath || {},
+        skill_gaps: analysisResult.overallAssessment.skillGaps || {},
+        concepts_covered: analysisResult.meta?.conceptCoverage || [],
+        original_text: text,
       })
       .select()
       .single();
 
     if (paperError) {
-      console.error("Database error:", paperError);
+      console.error("Error saving paper analysis:", paperError);
       throw paperError;
     }
 
-    console.log("Analysis completed successfully");
+    // Then, save student progress
+    const progressData = {
+      student_id: studentId,
+      paper_analysis_id: paperData.id,
+      concept_mastery:
+        analysisResult.overallAssessment.conceptualUnderstanding
+          ?.keyConceptsMastery || {},
+      skill_progress:
+        analysisResult.overallAssessment.technicalSkills?.progressIndicators ||
+        {},
+      created_at: new Date().toISOString(),
+    };
 
+    const { error: progressError } = await supabase
+      .from("student_progress")
+      .insert(progressData);
+
+    if (progressError) {
+      console.error("Error saving student progress:", progressError);
+      // We don't throw here as this is a secondary operation
+      // But we do log it for monitoring
+    }
+
+    // Return success response
     return NextResponse.json({
       success: true,
       ...analysisResult,
       paperAnalysisId: paperData.id,
+      originalText: text,
     });
   } catch (error) {
     console.error("Analysis process error:", error);
