@@ -22,63 +22,102 @@ const responseTemplate = {
     {
       number: 0,
       accuracy: false,
-      score: 0, // Add individual question score
+      score: 0,
       processEvaluation: "",
       completenessEvaluation: "",
       presentationEvaluation: "",
       feedback: "",
-      commonMistakes: [], // Add common mistakes identification
-      conceptsCovered: [], // Add concepts tested in this question
-      learningObjectives: [], // Add learning objectives addressed
-      remedialSuggestions: [], // Add specific improvement suggestions
-      challengeExtensions: [], // Add challenge problems for advanced students
+      commonMistakes: [],
+      conceptsCovered: [],
+      learningObjectives: [],
+      remedialSuggestions: [],
+      challengeExtensions: [],
     },
   ],
   overallAssessment: {
     totalScore: 0,
+    gradingMethod: "", // Add grading method field
     technicalSkills: {
       score: 0,
       strengths: [],
       weaknesses: [],
-      progressIndicators: {}, // Track progress in specific skill areas
+      progressIndicators: {},
     },
     conceptualUnderstanding: {
       score: 0,
       strengths: [],
       weaknesses: [],
-      keyConceptsMastery: {}, // Track mastery of key concepts
+      keyConceptsMastery: {},
     },
     majorStrengths: [],
     areasForImprovement: [],
     recommendations: [],
     teacherSummary: "",
     learningPath: {
-      // Add personalized learning path
       shortTerm: [],
       mediumTerm: [],
       longTerm: [],
     },
     skillGaps: {
-      // Track specific skill gaps
       critical: [],
       moderate: [],
       minor: [],
     },
     nextSteps: {
-      // Specific next steps
       practice: [],
       review: [],
       advance: [],
     },
   },
   meta: {
-    subjectAlignment: [], // Alignment with curriculum standards
-    difficultyDistribution: {}, // Distribution of question difficulty
-    conceptCoverage: {}, // Coverage of different concepts
-    timeSpent: 0, // Estimated time spent
-    complexityMetrics: {}, // Complexity analysis of solutions
+    subjectAlignment: [],
+    difficultyDistribution: {},
+    conceptCoverage: {},
+    timeSpent: 0,
+    complexityMetrics: {},
   },
 };
+
+// Helper function to calculate score based on subject
+function calculateScore(analysisResult, subject) {
+  if (!analysisResult || !analysisResult.questions) return 0;
+
+  const subjectLower = subject.toLowerCase();
+  const isMathSubject =
+    subjectLower === "math" || subjectLower === "mathematics";
+
+  if (isMathSubject) {
+    // For math, score is purely based on accuracy
+    const correctQuestions = analysisResult.questions.filter(
+      (q) => q.accuracy
+    ).length;
+    const totalQuestions = analysisResult.questions.length || 1;
+    return Math.round((correctQuestions / totalQuestions) * 100);
+  } else {
+    // For other subjects, use weighted scoring
+    const weights = {
+      technicalSkills: 0.3,
+      conceptualUnderstanding: 0.3,
+      questionAccuracy: 0.4,
+    };
+
+    const technicalScore =
+      (analysisResult.overallAssessment?.technicalSkills?.score || 0) * 20;
+    const conceptualScore =
+      (analysisResult.overallAssessment?.conceptualUnderstanding?.score || 0) *
+      20;
+    const accuracyScore =
+      (analysisResult.questions.filter((q) => q.accuracy).length /
+        (analysisResult.questions.length || 1)) *
+      100;
+
+    return Math.round(
+      technicalScore * weights.technicalSkills +
+        conceptualScore * weights.conceptualUnderstanding +
+        accuracyScore * weights.questionAccuracy
+    );
+  }
+}
 
 // Helper function to clean response text
 function cleanResponseText(text) {
@@ -324,23 +363,42 @@ export async function POST(req) {
     const text = await extractTextFromFile(file);
     const analysisResult = await analyzeWithClaude(text, subject);
 
-    // First, save the paper analysis
+    // Calculate the score based on subject
+    const calculatedScore = calculateScore(analysisResult, subject);
+    const isMathSubject =
+      subject.toLowerCase() === "math" ||
+      subject.toLowerCase() === "mathematics";
+    const gradingMethod = isMathSubject ? "accuracy_only" : "weighted_criteria";
+
+    // Prepare the final analysis result
+    const finalAnalysisResult = {
+      ...analysisResult,
+      subject,
+      overallAssessment: {
+        ...analysisResult.overallAssessment,
+        totalScore: calculatedScore,
+        gradingMethod,
+      },
+    };
+
+    // Save to database
     const { data: paperData, error: paperError } = await supabase
       .from("paper_analyses")
       .insert({
         student_id: studentId,
         teacher_id: teacherId,
         subject: subject,
-        score: analysisResult.overallAssessment.totalScore,
-        feedback: analysisResult.overallAssessment.teacherSummary,
-        questions_analysis: analysisResult.questions,
-        overall_assessment: analysisResult.overallAssessment,
+        score: calculatedScore,
+        grading_method: gradingMethod,
+        feedback: finalAnalysisResult.overallAssessment.teacherSummary,
+        questions_analysis: finalAnalysisResult.questions,
+        overall_assessment: finalAnalysisResult.overallAssessment,
         file_name: file.name,
         analyzed_at: new Date().toISOString(),
-        meta: analysisResult.meta || {},
-        learning_path: analysisResult.overallAssessment.learningPath || {},
-        skill_gaps: analysisResult.overallAssessment.skillGaps || {},
-        concepts_covered: analysisResult.meta?.conceptCoverage || [],
+        meta: finalAnalysisResult.meta || {},
+        learning_path: finalAnalysisResult.overallAssessment.learningPath || {},
+        skill_gaps: finalAnalysisResult.overallAssessment.skillGaps || {},
+        concepts_covered: finalAnalysisResult.meta?.conceptCoverage || [],
         original_text: text,
       })
       .select()
@@ -351,16 +409,16 @@ export async function POST(req) {
       throw paperError;
     }
 
-    // Then, save student progress
+    // Save student progress
     const progressData = {
       student_id: studentId,
       paper_analysis_id: paperData.id,
       concept_mastery:
-        analysisResult.overallAssessment.conceptualUnderstanding
+        finalAnalysisResult.overallAssessment.conceptualUnderstanding
           ?.keyConceptsMastery || {},
       skill_progress:
-        analysisResult.overallAssessment.technicalSkills?.progressIndicators ||
-        {},
+        finalAnalysisResult.overallAssessment.technicalSkills
+          ?.progressIndicators || {},
       created_at: new Date().toISOString(),
     };
 
@@ -370,14 +428,12 @@ export async function POST(req) {
 
     if (progressError) {
       console.error("Error saving student progress:", progressError);
-      // We don't throw here as this is a secondary operation
-      // But we do log it for monitoring
     }
 
-    // Return success response
+    // Return success response with updated analysis result
     return NextResponse.json({
       success: true,
-      ...analysisResult,
+      ...finalAnalysisResult,
       paperAnalysisId: paperData.id,
       originalText: text,
     });

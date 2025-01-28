@@ -234,7 +234,7 @@ export default function PaperAnalyzerPage() {
         throw new Error(responseData.error || "Analysis failed");
       }
 
-      setResult({ ...responseData, originalText: fileText });
+      setResult({ ...responseData, originalText: fileText, subject: subject });
       await saveAnalysisResult(responseData, fileText);
 
       toast.success("Paper analyzed successfully");
@@ -261,6 +261,11 @@ export default function PaperAnalyzerPage() {
         teacher_id: teacherProfile.id,
         subject: subject,
         score: analysisResult.overallAssessment.totalScore,
+        grading_method:
+          subject.toLowerCase() === "math" ||
+          subject.toLowerCase() === "mathematics"
+            ? "accuracy_only"
+            : "weighted_criteria",
         feedback: analysisResult.overallAssessment.teacherSummary,
         questions_analysis: analysisResult.questions || [],
         overall_assessment: analysisResult.overallAssessment,
@@ -287,12 +292,41 @@ export default function PaperAnalyzerPage() {
           minor: analysisResult.overallAssessment.skillGaps?.minor || [],
         },
         concepts_covered: analysisResult.meta?.conceptCoverage || [],
+        grading_details: {
+          method:
+            subject.toLowerCase() === "math" ||
+            subject.toLowerCase() === "mathematics"
+              ? {
+                  type: "accuracy_only",
+                  accuracy_score:
+                    ((analysisResult.questions?.filter((q) => q.accuracy)
+                      .length || 0) /
+                      (analysisResult.questions?.length || 1)) *
+                    100,
+                }
+              : {
+                  type: "weighted_criteria",
+                  technical_score:
+                    (analysisResult.overallAssessment?.technicalSkills?.score ||
+                      0) * 20,
+                  conceptual_score:
+                    (analysisResult.overallAssessment?.conceptualUnderstanding
+                      ?.score || 0) * 20,
+                  accuracy_score:
+                    ((analysisResult.questions?.filter((q) => q.accuracy)
+                      .length || 0) /
+                      (analysisResult.questions?.length || 1)) *
+                    100,
+                },
+        },
       });
 
       if (error) throw error;
-      console.log("Analysis saved to database");
+      console.log(
+        "Analysis saved to database with grading method:",
+        subject.toLowerCase() === "math" ? "accuracy_only" : "weighted_criteria"
+      );
 
-      // Update student progress
       await updateStudentProgress(analysisResult);
     } catch (error) {
       console.error("Error saving analysis:", error);
@@ -311,21 +345,28 @@ export default function PaperAnalyzerPage() {
         paper_analysis_id: analysisResult.paperAnalysisId,
         concept_mastery:
           analysisResult.overallAssessment.conceptualUnderstanding
-            .keyConceptsMastery,
+            ?.keyConceptsMastery || {},
         skill_progress:
-          analysisResult.overallAssessment.technicalSkills.progressIndicators,
+          analysisResult.overallAssessment.technicalSkills
+            ?.progressIndicators || {},
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(), // Add this field
       };
 
       const { error } = await supabase
         .from("student_progress")
-        .insert(progressData);
+        .upsert(progressData, {
+          onConflict: "student_id,paper_analysis_id",
+          ignoreDuplicates: false,
+        });
 
-      if (error) throw error;
-      console.log("Student progress updated successfully");
+      if (error) {
+        console.error("Error updating student progress:", error);
+      } else {
+        console.log("Student progress updated successfully");
+      }
     } catch (error) {
-      console.error("Error updating student progress:", error);
-      // Don't throw here, just log the error as this is a secondary operation
+      console.error("Error in updateStudentProgress:", error);
     }
   }
 
@@ -421,7 +462,10 @@ export default function PaperAnalyzerPage() {
             <div className="space-y-8">
               {/* Traditional Analysis Results */}
               <AnalysisResults
-                result={result}
+                result={{
+                  ...result,
+                  subject: subject, // Ensure subject is passed
+                }}
                 originalText={result.originalText}
                 components={{
                   QuestionAnalysis,

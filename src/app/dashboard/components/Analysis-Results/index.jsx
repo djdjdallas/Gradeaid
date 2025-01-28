@@ -5,6 +5,7 @@ import { ConceptualUnderstanding } from "./ConceptualUnderstanding";
 import { OverallAssessment } from "./OverallAssessment";
 import { AnalysisDashboard } from "./AnalysisDashboard";
 import { OriginalProblem } from "./OriginalProblem";
+import GradeCalculator from "./GradeCalculator";
 
 export function AnalysisResults({ result, originalText }) {
   const safeArray = (arr) => (Array.isArray(arr) ? arr : []);
@@ -45,7 +46,8 @@ export function AnalysisResults({ result, originalText }) {
             </p>
           </div>
         </div>
-
+        {/* Grade Calculator */}
+        <GradeCalculator analysisResult={result} subject={result.subject} />
         {/* Question Analysis */}
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -71,7 +73,7 @@ export function AnalysisResults({ result, originalText }) {
           <OverallAssessment assessment={result.overallAssessment} />
         </div>
 
-        {/* Charts and Visualizations */}
+        {/* Analysis Dashboard */}
         <div className="mt-8 pt-6 border-t border-gray-200">
           <h4 className="font-medium mb-4">Performance Analytics</h4>
           <AnalysisDashboard analysisData={result} />
