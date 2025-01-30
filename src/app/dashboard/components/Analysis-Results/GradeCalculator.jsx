@@ -2,22 +2,31 @@ import React, { useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 
 const GradeCalculator = ({ analysisResult, subject }) => {
+  // Move isMathSubject declaration before the useMemo hook
+  const isMathSubject =
+    subject?.toLowerCase() === "math" ||
+    subject?.toLowerCase() === "mathematics";
+
+  // Normalize any score to ensure it doesn't exceed maxPossible
+  const normalizeScore = (score, maxPossible = 100) => {
+    const numberScore = Number(score) || 0;
+    return Math.min(Math.max(numberScore, 0), maxPossible);
+  };
+
   const calculateOverallGrade = useMemo(() => {
     if (!analysisResult || !analysisResult.overallAssessment) return 0;
 
-    const { technicalSkills, conceptualUnderstanding, questions } =
+    const { technicalSkills, conceptualUnderstanding } =
       analysisResult.overallAssessment;
 
     // For mathematics, focus purely on accuracy
-    if (
-      subject?.toLowerCase() === "math" ||
-      subject?.toLowerCase() === "mathematics"
-    ) {
-      // Calculate pure accuracy score
+    if (isMathSubject) {
       const correctQuestions =
         analysisResult.questions?.filter((q) => q.accuracy).length || 0;
       const totalQuestions = analysisResult.questions?.length || 1;
-      return Math.round((correctQuestions / totalQuestions) * 100);
+      return normalizeScore(
+        Math.round((correctQuestions / totalQuestions) * 100)
+      );
     }
 
     // For other subjects, use weighted criteria
@@ -28,18 +37,21 @@ const GradeCalculator = ({ analysisResult, subject }) => {
     };
 
     // Calculate technical skills score (scale of 0-5 to 0-100)
-    const technicalScore = (technicalSkills?.score || 0) * 20;
+    const technicalScore = normalizeScore((technicalSkills?.score || 0) * 20);
 
     // Calculate conceptual understanding score (scale of 0-5 to 0-100)
-    const conceptualScore = (conceptualUnderstanding?.score || 0) * 20;
+    const conceptualScore = normalizeScore(
+      (conceptualUnderstanding?.score || 0) * 20
+    );
 
     // Calculate questions score
-    const questionsScore =
+    const questionsScore = normalizeScore(
       (analysisResult.questions?.reduce((acc, question) => {
         return acc + (question.accuracy ? 1 : 0);
       }, 0) /
         (analysisResult.questions?.length || 1)) *
-      100;
+        100
+    );
 
     // Calculate weighted total
     const totalScore =
@@ -47,21 +59,19 @@ const GradeCalculator = ({ analysisResult, subject }) => {
       conceptualScore * weights.conceptualUnderstanding +
       questionsScore * weights.questions;
 
-    return Math.round(totalScore);
-  }, [analysisResult, subject]);
+    return normalizeScore(Math.round(totalScore));
+  }, [analysisResult, subject, isMathSubject]);
 
   const getGradeLevel = (score) => {
-    if (score >= 90) return "A";
-    if (score >= 80) return "B";
-    if (score >= 70) return "C";
-    if (score >= 60) return "D";
+    const normalizedScore = normalizeScore(score);
+    if (normalizedScore >= 90) return "A";
+    if (normalizedScore >= 80) return "B";
+    if (normalizedScore >= 70) return "C";
+    if (normalizedScore >= 60) return "D";
     return "F";
   };
 
   const gradeLevel = getGradeLevel(calculateOverallGrade);
-  const isMathSubject =
-    subject?.toLowerCase() === "math" ||
-    subject?.toLowerCase() === "mathematics";
 
   return (
     <Card className="mb-6">
@@ -92,11 +102,13 @@ const GradeCalculator = ({ analysisResult, subject }) => {
             <div className="flex justify-between text-sm">
               <span>Answer Accuracy (100%)</span>
               <span>
-                {Math.round(
-                  ((analysisResult?.questions?.filter((q) => q.accuracy)
-                    ?.length || 0) /
-                    (analysisResult?.questions?.length || 1)) *
-                    100
+                {normalizeScore(
+                  Math.round(
+                    ((analysisResult?.questions?.filter((q) => q.accuracy)
+                      ?.length || 0) /
+                      (analysisResult?.questions?.length || 1)) *
+                      100
+                  )
                 )}
                 %
               </span>
@@ -106,9 +118,11 @@ const GradeCalculator = ({ analysisResult, subject }) => {
               <div className="flex justify-between text-sm">
                 <span>Technical Skills (30%)</span>
                 <span>
-                  {Math.round(
-                    (analysisResult?.overallAssessment?.technicalSkills
-                      ?.score || 0) * 20
+                  {normalizeScore(
+                    Math.round(
+                      (analysisResult?.overallAssessment?.technicalSkills
+                        ?.score || 0) * 20
+                    )
                   )}
                   %
                 </span>
@@ -116,9 +130,11 @@ const GradeCalculator = ({ analysisResult, subject }) => {
               <div className="flex justify-between text-sm">
                 <span>Conceptual Understanding (30%)</span>
                 <span>
-                  {Math.round(
-                    (analysisResult?.overallAssessment?.conceptualUnderstanding
-                      ?.score || 0) * 20
+                  {normalizeScore(
+                    Math.round(
+                      (analysisResult?.overallAssessment
+                        ?.conceptualUnderstanding?.score || 0) * 20
+                    )
                   )}
                   %
                 </span>
@@ -126,11 +142,13 @@ const GradeCalculator = ({ analysisResult, subject }) => {
               <div className="flex justify-between text-sm">
                 <span>Question Accuracy (40%)</span>
                 <span>
-                  {Math.round(
-                    ((analysisResult?.questions?.filter((q) => q.accuracy)
-                      ?.length || 0) /
-                      (analysisResult?.questions?.length || 1)) *
-                      100
+                  {normalizeScore(
+                    Math.round(
+                      ((analysisResult?.questions?.filter((q) => q.accuracy)
+                        ?.length || 0) /
+                        (analysisResult?.questions?.length || 1)) *
+                        100
+                    )
                   )}
                   %
                 </span>

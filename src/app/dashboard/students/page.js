@@ -22,8 +22,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UserPlus, Trash2, Edit } from "lucide-react";
+import { UserPlus, Trash2, Edit, ChartLine } from "lucide-react";
 import { toast } from "sonner";
+import Link from "next/link";
 
 export default function StudentsPage() {
   // State declarations for managing component data and UI
@@ -316,7 +317,14 @@ export default function StudentsPage() {
               ) : (
                 students.map((student) => (
                   <TableRow key={student.id}>
-                    <TableCell>{student.full_name}</TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/dashboard/students/${student.id}/progress`}
+                        className="hover:underline text-primary font-medium"
+                      >
+                        {student.full_name}
+                      </Link>
+                    </TableCell>
                     <TableCell>{student.grade_level || "N/A"}</TableCell>
                     <TableCell>
                       <div className="flex items-center space-x-2">
@@ -326,6 +334,13 @@ export default function StudentsPage() {
                           onClick={() => openAddEditModal(student)}
                         >
                           <Edit className="h-4 w-4 mr-2" /> Edit
+                        </Button>
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link
+                            href={`/dashboard/students/${student.id}/progress`}
+                          >
+                            <ChartLine className="h-4 w-4 mr-2" /> Progress
+                          </Link>
                         </Button>
                         <Button
                           variant="destructive"

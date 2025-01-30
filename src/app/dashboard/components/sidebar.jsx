@@ -11,6 +11,7 @@ import {
   Home,
   FileText,
   ClipboardPen,
+  ChartBar,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -24,6 +25,11 @@ const sidebarItems = [
     title: "Students",
     href: "/dashboard/students",
     icon: Users,
+  },
+  {
+    title: "Progress Reports",
+    href: "/dashboard/students/reports",
+    icon: ChartBar,
   },
   {
     title: "Assignments",
