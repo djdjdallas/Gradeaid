@@ -22,7 +22,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UserPlus, Trash2, Edit, ChartLine } from "lucide-react";
+import {
+  UserPlus,
+  Trash2,
+  Edit,
+  ChartLine,
+  FileUp,
+  Download,
+} from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 
@@ -34,6 +41,9 @@ export default function StudentsPage() {
   const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [teacherProfile, setTeacherProfile] = useState(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
   const [studentForm, setStudentForm] = useState({
     full_name: "",
     grade_level: "",
@@ -281,6 +291,85 @@ export default function StudentsPage() {
       </div>
     );
   }
+  const downloadTemplate = () => {
+    const csvContent = "full_name,grade_level\nJohn Doe,9\nJane Smith,10";
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "students_template.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type !== "text/csv") {
+      toast.error("Please upload a CSV file");
+      return;
+    }
+    setImportFile(file);
+  };
+  const handleImportStudents = async () => {
+    if (!importFile || !teacherProfile) return;
+
+    try {
+      setImporting(true);
+      const reader = new FileReader();
+
+      reader.onload = async (event) => {
+        const csvData = event.target.result;
+
+        Papa.parse(csvData, {
+          header: true,
+          skipEmptyLines: true,
+          complete: async (results) => {
+            if (results.errors.length > 0) {
+              throw new Error("Error parsing CSV file");
+            }
+
+            const students = results.data
+              .map((row) => ({
+                full_name: row.full_name?.trim(),
+                grade_level: row.grade_level?.trim(),
+                teacher_id: teacherProfile.id,
+              }))
+              .filter((student) => student.full_name);
+
+            if (students.length === 0) {
+              throw new Error("No valid student data found in CSV");
+            }
+
+            const { data, error } = await supabase
+              .from("students")
+              .insert(students)
+              .select();
+
+            if (error) throw error;
+
+            toast.success(`Successfully imported ${data.length} students`);
+            setIsImportModalOpen(false);
+            setImportFile(null);
+            await initializeTeacherAndStudents();
+          },
+          error: (error) => {
+            throw new Error(`CSV parsing error: ${error}`);
+          },
+        });
+      };
+
+      reader.readAsText(importFile);
+    } catch (error) {
+      console.error("Import error:", error);
+      toast.error("Failed to import students", {
+        description: error.message,
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
 
   // Main component render
   return (
@@ -288,9 +377,14 @@ export default function StudentsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">Students</h2>
-        <Button onClick={() => openAddEditModal()}>
-          <UserPlus className="mr-2 h-4 w-4" /> Add Student
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setIsImportModalOpen(true)}>
+            <FileUp className="mr-2 h-4 w-4" /> Import CSV
+          </Button>
+          <Button onClick={() => openAddEditModal()}>
+            <UserPlus className="mr-2 h-4 w-4" /> Add Student
+          </Button>
+        </div>
       </div>
 
       {/* Student List Card */}
@@ -429,6 +523,61 @@ export default function StudentsPage() {
             </Button>
             <Button variant="destructive" onClick={handleDeleteStudent}>
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Import Students Modal */}
+      <Dialog open={isImportModalOpen} onOpenChange={setIsImportModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import Students</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file with student information.
+              <Button
+                variant="link"
+                className="px-0 text-primary"
+                onClick={downloadTemplate}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download Template
+              </Button>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>CSV File</Label>
+              <Input
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                disabled={importing}
+              />
+              <p className="text-sm text-muted-foreground">
+                File should contain columns: full_name, grade_level
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsImportModalOpen(false)}
+              disabled={importing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImportStudents}
+              disabled={!importFile || importing}
+            >
+              {importing ? (
+                <>
+                  <div className="animate-spin mr-2 h-4 w-4 border-2 border-b-transparent rounded-full" />
+                  Importing...
+                </>
+              ) : (
+                "Import Students"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

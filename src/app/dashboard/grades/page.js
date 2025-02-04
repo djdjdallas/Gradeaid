@@ -12,13 +12,27 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function GradesPage() {
   const [grades, setGrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedGrades, setSelectedGrades] = useState(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [gradeToDelete, setGradeToDelete] = useState(null);
 
   useEffect(() => {
     fetchGrades();
@@ -33,7 +47,6 @@ export default function GradesPage() {
 
       if (authError) throw authError;
 
-      // First get the teacher's ID
       const { data: teacherData, error: teacherError } = await supabase
         .from("teachers")
         .select("id")
@@ -42,7 +55,6 @@ export default function GradesPage() {
 
       if (teacherError) throw teacherError;
 
-      // Fetch paper analyses for this teacher
       const { data, error } = await supabase
         .from("paper_analyses")
         .select(
@@ -63,7 +75,6 @@ export default function GradesPage() {
         .order("analyzed_at", { ascending: false });
 
       if (error) throw error;
-      console.log("Fetched grades:", data);
       setGrades(data || []);
     } catch (error) {
       console.error("Error fetching grades:", error);
@@ -74,6 +85,58 @@ export default function GradesPage() {
       setLoading(false);
     }
   }
+
+  const handleSelectAll = (checked) => {
+    if (checked) {
+      const allIds = filteredGrades.map((grade) => grade.id);
+      setSelectedGrades(new Set(allIds));
+    } else {
+      setSelectedGrades(new Set());
+    }
+  };
+
+  const handleSelectGrade = (gradeId, checked) => {
+    const newSelected = new Set(selectedGrades);
+    if (checked) {
+      newSelected.add(gradeId);
+    } else {
+      newSelected.delete(gradeId);
+    }
+    setSelectedGrades(newSelected);
+  };
+
+  const handleDelete = async () => {
+    try {
+      const idsToDelete = gradeToDelete
+        ? [gradeToDelete]
+        : Array.from(selectedGrades);
+
+      const { error } = await supabase
+        .from("paper_analyses")
+        .delete()
+        .in("id", idsToDelete);
+
+      if (error) throw error;
+
+      // Update local state
+      setGrades(grades.filter((grade) => !idsToDelete.includes(grade.id)));
+      setSelectedGrades(new Set());
+
+      toast.success(
+        `Successfully deleted ${idsToDelete.length} grade${
+          idsToDelete.length > 1 ? "s" : ""
+        }`
+      );
+    } catch (error) {
+      console.error("Delete error:", error);
+      toast.error("Failed to delete grades", {
+        description: error.message,
+      });
+    } finally {
+      setDeleteDialogOpen(false);
+      setGradeToDelete(null);
+    }
+  };
 
   const filteredGrades = grades.filter(
     (grade) =>
@@ -102,7 +165,20 @@ export default function GradesPage() {
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
-            <CardTitle>Student Grades</CardTitle>
+            <div className="flex items-center gap-4">
+              <CardTitle>Student Grades</CardTitle>
+              {selectedGrades.size > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setDeleteDialogOpen(true)}
+                  className="flex items-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete Selected ({selectedGrades.size})
+                </Button>
+              )}
+            </div>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -118,6 +194,17 @@ export default function GradesPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={
+                      filteredGrades.length > 0 &&
+                      filteredGrades.every((grade) =>
+                        selectedGrades.has(grade.id)
+                      )
+                    }
+                    onCheckedChange={handleSelectAll}
+                  />
+                </TableHead>
                 <TableHead>Student Name</TableHead>
                 <TableHead>File Name</TableHead>
                 <TableHead>Subject</TableHead>
@@ -130,6 +217,14 @@ export default function GradesPage() {
             <TableBody>
               {filteredGrades.map((grade) => (
                 <TableRow key={grade.id}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedGrades.has(grade.id)}
+                      onCheckedChange={(checked) =>
+                        handleSelectGrade(grade.id, checked)
+                      }
+                    />
+                  </TableCell>
                   <TableCell>{grade.students?.full_name}</TableCell>
                   <TableCell>{grade.file_name}</TableCell>
                   <TableCell>{grade.subject}</TableCell>
@@ -143,17 +238,29 @@ export default function GradesPage() {
                     {grade.feedback}
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        toast.info("View Details", {
-                          description: `Details for ${grade.students?.full_name}'s paper: ${grade.file_name}`,
-                        });
-                      }}
-                    >
-                      View Details
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          toast.info("View Details", {
+                            description: `Details for ${grade.students?.full_name}'s paper: ${grade.file_name}`,
+                          });
+                        }}
+                      >
+                        View Details
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          setGradeToDelete(grade.id);
+                          setDeleteDialogOpen(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -166,6 +273,35 @@ export default function GradesPage() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
+            <AlertDialogDescription>
+              {gradeToDelete
+                ? "Are you sure you want to delete this grade? This action cannot be undone."
+                : `Are you sure you want to delete ${selectedGrades.size} selected grades? This action cannot be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setGradeToDelete(null);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

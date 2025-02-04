@@ -220,6 +220,7 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-6 p-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Grade Distribution Card remains the same */}
         <Card>
           <CardHeader>
             <CardTitle>Grade Distribution</CardTitle>
@@ -242,6 +243,7 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
+        {/* Performance Over Time Card with updated Y-axis */}
         <Card>
           <CardHeader>
             <CardTitle>Performance Over Time</CardTitle>
@@ -253,8 +255,8 @@ export default function AnalyticsPage() {
                 <LineChart data={analytics.performanceOverTime}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
+                  <YAxis domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} />
+                  <Tooltip formatter={(value) => `${value}%`} />
                   <Line type="monotone" dataKey="average" stroke="#8884d8" />
                 </LineChart>
               </ResponsiveContainer>
@@ -262,6 +264,7 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
+        {/* Top Performing Students Card with percentage formatting */}
         <Card>
           <CardHeader>
             <CardTitle>Top Performing Students</CardTitle>
@@ -277,10 +280,26 @@ export default function AnalyticsPage() {
                     key={index}
                     className="flex justify-between items-center"
                   >
-                    <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {index + 1}.
+                      </span>
                       <p className="font-medium">{student.name}</p>
+                      <span className="text-sm text-muted-foreground">
+                        ({student.gradeCount} assignments)
+                      </span>
                     </div>
-                    <div className="text-lg font-bold">{student.average}%</div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 rounded-full"
+                          style={{ width: `${student.average}%` }}
+                        />
+                      </div>
+                      <span className="text-lg font-bold">
+                        {student.average}%
+                      </span>
+                    </div>
                   </div>
                 ))
               ) : (
@@ -292,6 +311,7 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
+        {/* Subject Performance Card with updated Y-axis */}
         <Card>
           <CardHeader>
             <CardTitle>Subject Performance</CardTitle>
@@ -303,8 +323,12 @@ export default function AnalyticsPage() {
                 <BarChart data={analytics.subjectPerformance}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="subject" />
-                  <YAxis />
-                  <Tooltip />
+                  <YAxis
+                    domain={[0, 100]}
+                    ticks={[0, 20, 40, 60, 80, 100]}
+                    tickFormatter={(value) => `${value}%`}
+                  />
+                  <Tooltip formatter={(value) => [`${value}%`, "Average"]} />
                   <Bar dataKey="average" fill="#82ca9d" />
                 </BarChart>
               </ResponsiveContainer>
