@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   Table,
@@ -12,27 +12,17 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Search, Trash2 } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, BarChart } from "lucide-react";
 import { toast } from "sonner";
 
 export default function GradesPage() {
-  const [grades, setGrades] = useState([]);
+  const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedGrades, setSelectedGrades] = useState(new Set());
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [gradeToDelete, setGradeToDelete] = useState(null);
+  const [sortConfig, setSortConfig] = useState({
+    key: "name",
+    direction: "asc",
+  });
 
   useEffect(() => {
     fetchGrades();
@@ -44,7 +34,6 @@ export default function GradesPage() {
         data: { user },
         error: authError,
       } = await supabase.auth.getUser();
-
       if (authError) throw authError;
 
       const { data: teacherData, error: teacherError } = await supabase
@@ -55,27 +44,75 @@ export default function GradesPage() {
 
       if (teacherError) throw teacherError;
 
-      const { data, error } = await supabase
+      // First get all students
+      const { data: studentsData, error: studentsError } = await supabase
+        .from("students")
+        .select("id, full_name, grade_level")
+        .eq("teacher_id", teacherData.id);
+
+      if (studentsError) throw studentsError;
+
+      // Then get all grades
+      const { data: grades, error: gradesError } = await supabase
         .from("paper_analyses")
         .select(
           `
           id,
           score,
-          feedback,
           subject,
-          file_name,
           analyzed_at,
-          students (
-            id,
-            full_name
-          )
+          student_id
         `
         )
-        .eq("teacher_id", teacherData.id)
-        .order("analyzed_at", { ascending: false });
+        .eq("teacher_id", teacherData.id);
 
-      if (error) throw error;
-      setGrades(data || []);
+      if (gradesError) throw gradesError;
+
+      // Process and combine the data
+      const processedStudents = studentsData.map((student) => {
+        const studentGrades = grades.filter(
+          (grade) => grade.student_id === student.id
+        );
+        const averageScore =
+          studentGrades.length > 0
+            ? studentGrades.reduce((sum, grade) => sum + grade.score, 0) /
+              studentGrades.length
+            : 0;
+
+        const subjectBreakdown = {};
+        studentGrades.forEach((grade) => {
+          if (!subjectBreakdown[grade.subject]) {
+            subjectBreakdown[grade.subject] = [];
+          }
+          subjectBreakdown[grade.subject].push(grade.score);
+        });
+
+        const subjectAverages = Object.entries(subjectBreakdown).map(
+          ([subject, scores]) => ({
+            subject,
+            average:
+              scores.reduce((sum, score) => sum + score, 0) / scores.length,
+          })
+        );
+
+        return {
+          id: student.id,
+          name: student.full_name,
+          gradeLevel: student.grade_level,
+          averageScore: Math.round(averageScore),
+          assignmentCount: studentGrades.length,
+          recentGrade:
+            studentGrades.length > 0
+              ? studentGrades.sort(
+                  (a, b) => new Date(b.analyzed_at) - new Date(a.analyzed_at)
+                )[0].score
+              : null,
+          subjectAverages,
+          trend: calculateTrend(studentGrades),
+        };
+      });
+
+      setStudents(processedStudents);
     } catch (error) {
       console.error("Error fetching grades:", error);
       toast.error("Failed to fetch grades", {
@@ -86,68 +123,58 @@ export default function GradesPage() {
     }
   }
 
-  const handleSelectAll = (checked) => {
-    if (checked) {
-      const allIds = filteredGrades.map((grade) => grade.id);
-      setSelectedGrades(new Set(allIds));
-    } else {
-      setSelectedGrades(new Set());
-    }
+  function calculateTrend(grades) {
+    if (grades.length < 2) return "neutral";
+    const sortedGrades = grades.sort(
+      (a, b) => new Date(a.analyzed_at) - new Date(b.analyzed_at)
+    );
+    const recentGrades = sortedGrades.slice(-3);
+    const firstGrade = recentGrades[0].score;
+    const lastGrade = recentGrades[recentGrades.length - 1].score;
+    return lastGrade > firstGrade
+      ? "up"
+      : lastGrade < firstGrade
+      ? "down"
+      : "neutral";
+  }
+
+  const handleSort = (key) => {
+    setSortConfig({
+      key,
+      direction:
+        sortConfig.key === key && sortConfig.direction === "asc"
+          ? "desc"
+          : "asc",
+    });
   };
 
-  const handleSelectGrade = (gradeId, checked) => {
-    const newSelected = new Set(selectedGrades);
-    if (checked) {
-      newSelected.add(gradeId);
-    } else {
-      newSelected.delete(gradeId);
-    }
-    setSelectedGrades(newSelected);
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) return null;
+    return sortConfig.direction === "asc" ? (
+      <ChevronUp className="h-4 w-4" />
+    ) : (
+      <ChevronDown className="h-4 w-4" />
+    );
   };
 
-  const handleDelete = async () => {
-    try {
-      const idsToDelete = gradeToDelete
-        ? [gradeToDelete]
-        : Array.from(selectedGrades);
+  const filteredAndSortedStudents = [...students]
+    .filter(
+      (student) =>
+        student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        student.gradeLevel?.toString().includes(searchTerm)
+    )
+    .sort((a, b) => {
+      if (sortConfig.key === "name") {
+        return sortConfig.direction === "asc"
+          ? a.name.localeCompare(b.name)
+          : b.name.localeCompare(a.name);
+      }
+      return sortConfig.direction === "asc"
+        ? a[sortConfig.key] - b[sortConfig.key]
+        : b[sortConfig.key] - a[sortConfig.key];
+    });
 
-      const { error } = await supabase
-        .from("paper_analyses")
-        .delete()
-        .in("id", idsToDelete);
-
-      if (error) throw error;
-
-      // Update local state
-      setGrades(grades.filter((grade) => !idsToDelete.includes(grade.id)));
-      setSelectedGrades(new Set());
-
-      toast.success(
-        `Successfully deleted ${idsToDelete.length} grade${
-          idsToDelete.length > 1 ? "s" : ""
-        }`
-      );
-    } catch (error) {
-      console.error("Delete error:", error);
-      toast.error("Failed to delete grades", {
-        description: error.message,
-      });
-    } finally {
-      setDeleteDialogOpen(false);
-      setGradeToDelete(null);
-    }
-  };
-
-  const filteredGrades = grades.filter(
-    (grade) =>
-      grade.students?.full_name
-        ?.toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      grade.file_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      grade.subject?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const getGradeColor = (score) => {
+  const getScoreColor = (score) => {
     if (score >= 90) return "text-green-600";
     if (score >= 80) return "text-blue-600";
     if (score >= 70) return "text-yellow-600";
@@ -156,33 +183,23 @@ export default function GradesPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-96">Loading...</div>
+      <div className="flex justify-center items-center h-96">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gray-900"></div>
+      </div>
     );
   }
 
   return (
     <div className="space-y-6 p-6">
+      <h2 className="text-3xl font-bold tracking-tight">Grades</h2>
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
-            <div className="flex items-center gap-4">
-              <CardTitle>Student Grades</CardTitle>
-              {selectedGrades.size > 0 && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setDeleteDialogOpen(true)}
-                  className="flex items-center gap-2"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete Selected ({selectedGrades.size})
-                </Button>
-              )}
-            </div>
+            <CardTitle>Student Grade Overview</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search grades..."
+                placeholder="Search students..."
                 className="pl-8"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -194,114 +211,112 @@ export default function GradesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-12">
-                  <Checkbox
-                    checked={
-                      filteredGrades.length > 0 &&
-                      filteredGrades.every((grade) =>
-                        selectedGrades.has(grade.id)
-                      )
-                    }
-                    onCheckedChange={handleSelectAll}
-                  />
+                <TableHead
+                  className="cursor-pointer"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-2">
+                    Student Name {getSortIcon("name")}
+                  </div>
                 </TableHead>
-                <TableHead>Student Name</TableHead>
-                <TableHead>File Name</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead>Score</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Feedback</TableHead>
+                <TableHead
+                  className="cursor-pointer"
+                  onClick={() => handleSort("averageScore")}
+                >
+                  <div className="flex items-center gap-2">
+                    Overall Average {getSortIcon("averageScore")}
+                  </div>
+                </TableHead>
+                <TableHead>Recent Performance</TableHead>
+                <TableHead>Subject Breakdown</TableHead>
+                <TableHead
+                  className="cursor-pointer"
+                  onClick={() => handleSort("assignmentCount")}
+                >
+                  <div className="flex items-center gap-2">
+                    Assignments {getSortIcon("assignmentCount")}
+                  </div>
+                </TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredGrades.map((grade) => (
-                <TableRow key={grade.id}>
-                  <TableCell>
-                    <Checkbox
-                      checked={selectedGrades.has(grade.id)}
-                      onCheckedChange={(checked) =>
-                        handleSelectGrade(grade.id, checked)
-                      }
-                    />
+              {filteredAndSortedStudents.map((student) => (
+                <TableRow key={student.id}>
+                  <TableCell className="font-medium">
+                    <div>
+                      {student.name}
+                      <div className="text-sm text-muted-foreground">
+                        Grade {student.gradeLevel || "N/A"}
+                      </div>
+                    </div>
                   </TableCell>
-                  <TableCell>{grade.students?.full_name}</TableCell>
-                  <TableCell>{grade.file_name}</TableCell>
-                  <TableCell>{grade.subject}</TableCell>
-                  <TableCell className={getGradeColor(grade.score)}>
-                    {grade.score}%
-                  </TableCell>
-                  <TableCell>
-                    {new Date(grade.analyzed_at).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate">
-                    {grade.feedback}
+                  <TableCell className={getScoreColor(student.averageScore)}>
+                    <div className="font-bold text-lg">
+                      {student.averageScore}%
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          toast.info("View Details", {
-                            description: `Details for ${grade.students?.full_name}'s paper: ${grade.file_name}`,
-                          });
-                        }}
-                      >
-                        View Details
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => {
-                          setGradeToDelete(grade.id);
-                          setDeleteDialogOpen(true);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {student.recentGrade && (
+                        <>
+                          <div className={getScoreColor(student.recentGrade)}>
+                            {student.recentGrade}%
+                          </div>
+                          {student.trend === "up" && (
+                            <div className="text-green-500">↑</div>
+                          )}
+                          {student.trend === "down" && (
+                            <div className="text-red-500">↓</div>
+                          )}
+                        </>
+                      )}
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="space-y-1">
+                      {student.subjectAverages.map((subject) => (
+                        <div
+                          key={subject.subject}
+                          className="flex items-center gap-2"
+                        >
+                          <span className="text-sm font-medium">
+                            {subject.subject}:
+                          </span>
+                          <span className={getScoreColor(subject.average)}>
+                            {Math.round(subject.average)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell>{student.assignmentCount}</TableCell>
+                  <TableCell>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        // This would link to a detailed view
+                        toast.info("View detailed performance", {
+                          description: `Viewing ${student.name}'s detailed performance`,
+                        });
+                      }}
+                    >
+                      <BarChart className="h-4 w-4 mr-2" />
+                      View Details
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-          {filteredGrades.length === 0 && (
+          {filteredAndSortedStudents.length === 0 && (
             <div className="text-center text-muted-foreground py-4">
-              No grades found
+              No students found
             </div>
           )}
         </CardContent>
       </Card>
-
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
-            <AlertDialogDescription>
-              {gradeToDelete
-                ? "Are you sure you want to delete this grade? This action cannot be undone."
-                : `Are you sure you want to delete ${selectedGrades.size} selected grades? This action cannot be undone.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setDeleteDialogOpen(false);
-                setGradeToDelete(null);
-              }}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

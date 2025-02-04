@@ -11,6 +11,7 @@ import {
   Home,
   FileText,
   ClipboardPen,
+  HelpCircle,
 } from "lucide-react";
 
 const sidebarItems = [
@@ -48,6 +49,11 @@ const sidebarItems = [
     title: "Settings",
     href: "/dashboard/settings",
     icon: Settings,
+  },
+  {
+    title: "Help",
+    href: "/dashboard/help",
+    icon: HelpCircle,
   },
 ];
 

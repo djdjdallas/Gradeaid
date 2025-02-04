@@ -320,11 +320,11 @@ export default function AssignmentsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => {
-                            toast.info("View Details", {
-                              description: `Details for ${assignment.file_name}`,
-                            });
-                          }}
+                          onClick={() =>
+                            router.push(
+                              `/dashboard/assignments/${assignment.id}`
+                            )
+                          }
                         >
                           View
                         </Button>

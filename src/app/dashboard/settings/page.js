@@ -41,18 +41,24 @@ export default function SettingsPage() {
   async function loadSettings() {
     try {
       setLoading(true);
+      // Get authenticated user
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
 
-      // Fetch user profile
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
+      if (userError) throw userError;
+
+      // Fetch teacher profile
+      const { data: teacherData, error: teacherError } = await supabase
+        .from("teachers")
         .select("*")
         .eq("user_id", user.id)
         .single();
 
-      if (profileError) throw profileError;
+      if (teacherError && teacherError.code !== "PGRST116") {
+        throw teacherError;
+      }
 
       // Fetch user settings
       const { data: userSettings, error: settingsError } = await supabase
@@ -61,11 +67,15 @@ export default function SettingsPage() {
         .eq("user_id", user.id)
         .single();
 
+      if (settingsError && settingsError.code !== "PGRST116") {
+        throw settingsError;
+      }
+
       // Set initial settings
       setSettings({
-        fullName: profile.full_name || "",
+        fullName: teacherData?.full_name || "",
         email: user.email,
-        subject: profile.subject || "",
+        subject: teacherData?.subject || "",
         notifications: {
           emailNotifications: userSettings?.email_notifications ?? false,
           newSubmissionAlerts: userSettings?.new_submission_alerts ?? false,
@@ -93,20 +103,23 @@ export default function SettingsPage() {
       setSaving(true);
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
 
-      // Update profile
-      const { error: profileError } = await supabase
-        .from("profiles")
+      if (userError) throw userError;
+
+      // Update teacher profile
+      const { error: teacherError } = await supabase
+        .from("teachers")
         .update({
           full_name: settings.fullName,
           subject: settings.subject,
         })
         .eq("user_id", user.id);
 
-      if (profileError) throw profileError;
+      if (teacherError) throw teacherError;
 
-      // Update or insert settings
+      // Upsert user settings
       const { error: settingsError } = await supabase
         .from("user_settings")
         .upsert({
@@ -153,6 +166,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <h2 className="text-3xl font-bold tracking-tight">Settings</h2>
       <div className="grid gap-6">
         {/* Profile Settings Card */}
         <Card>

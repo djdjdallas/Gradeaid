@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
-
+import Papa from "papaparse";
 export default function StudentsPage() {
   // State declarations for managing component data and UI
   const [students, setStudents] = useState([]);
@@ -321,21 +321,50 @@ export default function StudentsPage() {
 
       reader.onload = async (event) => {
         const csvData = event.target.result;
+        console.log("CSV Data:", csvData); // Debug log
 
         Papa.parse(csvData, {
           header: true,
           skipEmptyLines: true,
           complete: async (results) => {
+            console.log("Parse results:", results); // Debug log
+
             if (results.errors.length > 0) {
-              throw new Error("Error parsing CSV file");
+              console.error("CSV parsing errors:", results.errors); // Debug log
+              throw new Error(
+                `Error parsing CSV file: ${results.errors
+                  .map((e) => e.message)
+                  .join(", ")}`
+              );
+            }
+
+            if (!results.data || results.data.length === 0) {
+              throw new Error("No data found in CSV file");
+            }
+
+            // Validate CSV structure
+            const requiredColumns = ["full_name", "grade_level"];
+            const headers = Object.keys(results.data[0]);
+            const missingColumns = requiredColumns.filter(
+              (col) => !headers.includes(col)
+            );
+
+            if (missingColumns.length > 0) {
+              throw new Error(
+                `Missing required columns: ${missingColumns.join(", ")}`
+              );
             }
 
             const students = results.data
-              .map((row) => ({
-                full_name: row.full_name?.trim(),
-                grade_level: row.grade_level?.trim(),
-                teacher_id: teacherProfile.id,
-              }))
+              .map((row) => {
+                const student = {
+                  full_name: row.full_name?.trim(),
+                  grade_level: row.grade_level?.trim(),
+                  teacher_id: teacherProfile.id,
+                };
+                console.log("Processed student:", student); // Debug log
+                return student;
+              })
               .filter((student) => student.full_name);
 
             if (students.length === 0) {
@@ -355,16 +384,23 @@ export default function StudentsPage() {
             await initializeTeacherAndStudents();
           },
           error: (error) => {
+            console.error("Papa Parse error:", error); // Debug log
             throw new Error(`CSV parsing error: ${error}`);
           },
         });
+      };
+
+      reader.onerror = (error) => {
+        console.error("FileReader error:", error); // Debug log
+        throw new Error("Error reading file");
       };
 
       reader.readAsText(importFile);
     } catch (error) {
       console.error("Import error:", error);
       toast.error("Failed to import students", {
-        description: error.message,
+        description:
+          error.message || "Please ensure your CSV file is properly formatted",
       });
     } finally {
       setImporting(false);
