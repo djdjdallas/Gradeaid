@@ -54,7 +54,35 @@ export default function PaperAnalyzerPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    initializeData();
+    const checkAuthAndInitialize = async () => {
+      try {
+        setLoading(true);
+
+        // Check authentication first
+        const {
+          data: { session },
+          error: authError,
+        } = await supabase.auth.getSession();
+
+        if (authError || !session) {
+          window.location.href = "/login";
+          return;
+        }
+
+        // If authenticated, proceed with initialization
+        await initializeData();
+      } catch (error) {
+        console.error("Initialization error:", error);
+        setError(error.message);
+        toast.error("Failed to load data", {
+          description: error.message || "Please try again later",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuthAndInitialize();
 
     // Cleanup function
     return () => {
@@ -208,7 +236,17 @@ export default function PaperAnalyzerPage() {
       setAnalyzing(true);
       setError(null);
 
-      // First, read the file content
+      // Get fresh session
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error("Please sign in to analyze papers");
+      }
+
+      // Read the file content
       const fileText = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target.result);
@@ -216,6 +254,7 @@ export default function PaperAnalyzerPage() {
         reader.readAsText(file);
       });
 
+      // Create form data
       const formData = new FormData();
       formData.append("file", file);
       formData.append("studentId", studentId);
@@ -223,27 +262,52 @@ export default function PaperAnalyzerPage() {
       formData.append("teacherId", teacherProfile.id);
       formData.append("originalText", fileText);
 
+      // Make request to our API route with fresh token
       const response = await fetch("/api/analyze", {
         method: "POST",
         body: formData,
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
 
-      const responseData = await response.json();
+      const data = await response.json();
 
-      if (!response.ok || !responseData.success) {
-        throw new Error(responseData.error || "Analysis failed");
+      if (!response.ok) {
+        if (response.status === 401) {
+          await supabase.auth.signOut();
+          window.location.href = "/login";
+          throw new Error("Authentication expired. Please sign in again.");
+        }
+        throw new Error(data.error || "Analysis failed");
       }
 
-      setResult({ ...responseData, originalText: fileText, subject: subject });
-      await saveAnalysisResult(responseData, fileText);
+      // Set result and update UI
+      setResult({ ...data, originalText: fileText, subject: subject });
+
+      // Save analysis result if needed
+      if (data.paperAnalysisId) {
+        await saveAnalysisResult(data);
+      }
 
       toast.success("Paper analyzed successfully");
     } catch (error) {
       console.error("Analysis error:", error);
       setError(error.message);
-      toast.error("Analysis failed", {
-        description: error.message || "Please try again",
-      });
+
+      if (error.message.includes("sign in")) {
+        toast.error("Authentication Required", {
+          description: error.message,
+          action: {
+            label: "Sign In",
+            onClick: () => (window.location.href = "/login"),
+          },
+        });
+      } else {
+        toast.error("Analysis failed", {
+          description: error.message || "Please try again",
+        });
+      }
     } finally {
       setAnalyzing(false);
     }
