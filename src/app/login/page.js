@@ -8,6 +8,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { CheckCircle2, Chrome } from "lucide-react";
 import { toast } from "sonner";
+import { loadStripe } from "@stripe/stripe-js";
+
+const stripePromise = loadStripe(
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+);
 
 const LoginPage = () => {
   const [email, setEmail] = useState("");
@@ -26,7 +31,13 @@ const LoginPage = () => {
       } = await supabase.auth.getSession();
 
       if (session?.user?.email_confirmed_at) {
-        router.push("/dashboard");
+        // Check for subscription intent
+        const subscriptionIntent = localStorage.getItem("subscription_intent");
+        if (subscriptionIntent) {
+          handleStoredSubscription(subscriptionIntent);
+        } else {
+          router.push("/dashboard");
+        }
       } else if (session?.user && !session.user.email_confirmed_at) {
         toast.error("Please verify your email to continue");
       }
@@ -39,7 +50,15 @@ const LoginPage = () => {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === "SIGNED_IN") {
         if (session?.user?.email_confirmed_at) {
-          router.push("/dashboard");
+          // Check for subscription intent on sign in
+          const subscriptionIntent = localStorage.getItem(
+            "subscription_intent"
+          );
+          if (subscriptionIntent) {
+            handleStoredSubscription(subscriptionIntent);
+          } else {
+            router.push("/dashboard");
+          }
         } else {
           toast.error("Please verify your email to continue");
         }
@@ -48,12 +67,48 @@ const LoginPage = () => {
         session?.user?.email_confirmed_at
       ) {
         toast.success("Email verified successfully!");
-        router.push("/dashboard");
+        const subscriptionIntent = localStorage.getItem("subscription_intent");
+        if (subscriptionIntent) {
+          handleStoredSubscription(subscriptionIntent);
+        } else {
+          router.push("/dashboard");
+        }
       }
     });
 
     return () => subscription.unsubscribe();
   }, [router]);
+
+  const handleStoredSubscription = async (subscriptionIntent) => {
+    try {
+      const { plan, interval } = JSON.parse(subscriptionIntent);
+      localStorage.removeItem("subscription_intent");
+
+      const response = await fetch("/api/stripe/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan, interval }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create checkout session");
+      }
+
+      const { sessionId } = await response.json();
+      const stripe = await stripePromise;
+
+      if (!stripe) {
+        throw new Error("Stripe failed to initialize");
+      }
+
+      const { error } = await stripe.redirectToCheckout({ sessionId });
+      if (error) throw error;
+    } catch (error) {
+      console.error("Post-login subscription error:", error);
+      toast.error("Failed to process subscription");
+      router.push("/dashboard");
+    }
+  };
 
   const resendVerificationEmail = async (email) => {
     const { error } = await supabase.auth.resendConfirmationEmail({
@@ -90,7 +145,7 @@ const LoginPage = () => {
           return;
         }
 
-        router.push("/dashboard");
+        // Let the useEffect handle the redirect and subscription
         return;
       }
 
@@ -108,7 +163,6 @@ const LoginPage = () => {
 
       if (authError) throw authError;
 
-      // Create teacher profile after successful signup
       if (authData.user) {
         const { error: profileError } = await supabase.from("teachers").insert({
           user_id: authData.user.id,

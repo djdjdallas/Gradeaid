@@ -333,8 +333,34 @@ IMPORTANT: Your response must follow the exact JSON structure provided, with no 
 
 // In your route.js
 export async function POST(req) {
-  console.log("Received POST request to /api/analyze");
+  const supabase = createRouteHandlerClient({ cookies });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
+  // Check trial usage
+  const { data: analyses } = await supabase
+    .from("paper_analyses")
+    .select("id")
+    .eq("teacher_id", user.id)
+    .count();
+
+  const { data: teacher } = await supabase
+    .from("teachers")
+    .select("subscription_status, trial_ends_at")
+    .eq("user_id", user.id)
+    .single();
+
+  // Check if trial limits exceeded
+  if (teacher.subscription_status === "trialing" && analyses.count >= 5) {
+    return Response.json(
+      {
+        error:
+          "Trial limit reached. Please upgrade to continue analyzing papers.",
+      },
+      { status: 403 }
+    );
+  }
   try {
     const formData = await req.formData();
     const file = formData.get("file");
