@@ -1,3 +1,6 @@
+"use client";
+
+import { Suspense } from "react";
 import Link from "next/link";
 import { ArrowRight, CheckCircle, BarChart, Book, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +13,68 @@ import {
 } from "@/components/ui/card";
 import PricingSection from "@/components/pricing/pricing-section";
 
+// Create a loading component for suspense fallback
+const LoadingState = () => (
+  <div className="animate-pulse flex space-x-4">
+    <div className="h-4 w-24 bg-blue-100 rounded"></div>
+  </div>
+);
+
+// Navigation Links Component
+const NavigationLinks = () => {
+  return (
+    <>
+      <Link
+        className="text-sm font-medium text-blue-800 hover:text-blue-600 hover:underline underline-offset-4"
+        href="#features"
+      >
+        Features
+      </Link>
+      <Link
+        className="text-sm font-medium text-blue-800 hover:text-blue-600 hover:underline underline-offset-4"
+        href="#testimonials"
+      >
+        Testimonials
+      </Link>
+      <Link
+        className="text-sm font-medium text-blue-800 hover:text-blue-600 hover:underline underline-offset-4"
+        href="#pricing"
+      >
+        Pricing
+      </Link>
+      <Button
+        variant="outline"
+        className="border-blue-600 text-blue-600 hover:bg-blue-50"
+        asChild
+      >
+        <Link href="/login">Sign In</Link>
+      </Button>
+    </>
+  );
+};
+
+// Feature Card Component
+const FeatureCard = ({ icon: Icon, title, description }) => (
+  <Card className="border-blue-100 hover:border-blue-200 transition-colors duration-300">
+    <CardHeader>
+      <Icon className="h-10 w-10 mb-2 text-blue-600" />
+      <CardTitle className="text-blue-900">{title}</CardTitle>
+    </CardHeader>
+    <CardContent className="text-blue-700">{description}</CardContent>
+  </Card>
+);
+
+// Testimonial Card Component
+const TestimonialCard = ({ name, role, quote }) => (
+  <Card className="border-blue-100">
+    <CardHeader>
+      <CardTitle className="text-blue-900">{name}</CardTitle>
+      <CardDescription className="text-blue-600">{role}</CardDescription>
+    </CardHeader>
+    <CardContent className="text-blue-700">{quote}</CardContent>
+  </Card>
+);
+
 export default function LandingPage() {
   return (
     <div className="flex flex-col min-h-screen">
@@ -21,31 +86,9 @@ export default function LandingPage() {
             <span className="font-bold text-xl text-blue-900">GradeAid</span>
           </Link>
           <nav className="ml-auto flex gap-4 sm:gap-6">
-            <Link
-              className="text-sm font-medium text-blue-800 hover:text-blue-600 hover:underline underline-offset-4"
-              href="#features"
-            >
-              Features
-            </Link>
-            <Link
-              className="text-sm font-medium text-blue-800 hover:text-blue-600 hover:underline underline-offset-4"
-              href="#testimonials"
-            >
-              Testimonials
-            </Link>
-            <Link
-              className="text-sm font-medium text-blue-800 hover:text-blue-600 hover:underline underline-offset-4"
-              href="#pricing"
-            >
-              Pricing
-            </Link>
-            <Button
-              variant="outline"
-              className="border-blue-600 text-blue-600 hover:bg-blue-50"
-              asChild
-            >
-              <Link href="/login">Sign In</Link>
-            </Button>
+            <Suspense fallback={<LoadingState />}>
+              <NavigationLinks />
+            </Suspense>
           </nav>
         </div>
       </header>
@@ -98,42 +141,21 @@ export default function LandingPage() {
               </p>
             </div>
             <div className="grid gap-8 md:grid-cols-3 md:gap-12">
-              <Card className="border-blue-100 hover:border-blue-200 transition-colors duration-300">
-                <CardHeader>
-                  <Book className="h-10 w-10 mb-2 text-blue-600" />
-                  <CardTitle className="text-blue-900">
-                    Homework Analysis
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-blue-700">
-                  Our AI analyzes students' homework, providing detailed
-                  insights into their performance and areas for improvement.
-                </CardContent>
-              </Card>
-              <Card className="border-blue-100 hover:border-blue-200 transition-colors duration-300">
-                <CardHeader>
-                  <Brain className="h-10 w-10 mb-2 text-blue-600" />
-                  <CardTitle className="text-blue-900">
-                    Personalized Tips
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-blue-700">
-                  Generate tailored tips and recommendations to help each
-                  student excel in their studies.
-                </CardContent>
-              </Card>
-              <Card className="border-blue-100 hover:border-blue-200 transition-colors duration-300">
-                <CardHeader>
-                  <BarChart className="h-10 w-10 mb-2 text-blue-600" />
-                  <CardTitle className="text-blue-900">
-                    Intuitive Dashboard
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-blue-700">
-                  Access a comprehensive dashboard that organizes all student
-                  data, progress tracking, and analytics in one place.
-                </CardContent>
-              </Card>
+              <FeatureCard
+                icon={Book}
+                title="Homework Analysis"
+                description="Our AI analyzes students' homework, providing detailed insights into their performance and areas for improvement."
+              />
+              <FeatureCard
+                icon={Brain}
+                title="Personalized Tips"
+                description="Generate tailored tips and recommendations to help each student excel in their studies."
+              />
+              <FeatureCard
+                icon={BarChart}
+                title="Intuitive Dashboard"
+                description="Access a comprehensive dashboard that organizes all student data, progress tracking, and analytics in one place."
+              />
             </div>
           </div>
         </section>
@@ -151,40 +173,24 @@ export default function LandingPage() {
               </p>
             </div>
             <div className="grid gap-8 md:grid-cols-2 md:gap-12">
-              <Card className="border-blue-100">
-                <CardHeader>
-                  <CardTitle className="text-blue-900">Sarah Johnson</CardTitle>
-                  <CardDescription className="text-blue-600">
-                    High School Math Teacher
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="text-blue-700">
-                  "This AI teaching assistant has transformed the way I manage
-                  my classroom. The homework analysis feature saves me hours of
-                  grading time, and the personalized tips help me provide
-                  targeted support to each student."
-                </CardContent>
-              </Card>
-              <Card className="border-blue-100">
-                <CardHeader>
-                  <CardTitle className="text-blue-900">Michael Lee</CardTitle>
-                  <CardDescription className="text-blue-600">
-                    Middle School Science Teacher
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="text-blue-700">
-                  "The intuitive dashboard has made it so much easier to track
-                  student progress and identify areas where additional support
-                  is needed. It's like having a second pair of eyes in the
-                  classroom!"
-                </CardContent>
-              </Card>
+              <TestimonialCard
+                name="Sarah Johnson"
+                role="High School Math Teacher"
+                quote="This AI teaching assistant has transformed the way I manage my classroom. The homework analysis feature saves me hours of grading time, and the personalized tips help me provide targeted support to each student."
+              />
+              <TestimonialCard
+                name="Michael Lee"
+                role="Middle School Science Teacher"
+                quote="The intuitive dashboard has made it so much easier to track student progress and identify areas where additional support is needed. It's like having a second pair of eyes in the classroom!"
+              />
             </div>
           </div>
         </section>
 
-        {/* Pricing Section - Now imported */}
-        <PricingSection />
+        {/* Pricing Section */}
+        <Suspense fallback={<div>Loading pricing...</div>}>
+          <PricingSection />
+        </Suspense>
 
         {/* CTA Section */}
         <section className="w-full py-12 md:py-24 bg-gradient-to-b from-blue-50 to-white">
