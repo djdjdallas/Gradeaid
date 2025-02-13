@@ -19,7 +19,7 @@ const supabase = createClient(
 async function validateTeacherAndTrial(userId) {
   const { data: teacher, error: teacherError } = await supabase
     .from("teachers")
-    .select("id, subscription_status, trial_ends_at")
+    .select("*")
     .eq("user_id", userId)
     .single();
 
@@ -27,17 +27,29 @@ async function validateTeacherAndTrial(userId) {
     throw new Error("Teacher profile not found");
   }
 
+  // Check subscription status
+  if (teacher.subscription_status === "active") {
+    return teacher; // Paid users can analyze unlimited papers
+  }
+
+  // For trial users, check paper count
   if (teacher.subscription_status === "trialing") {
-    const { count } = await supabase
+    const { count, error: countError } = await supabase
       .from("paper_analyses")
       .select("id", { count: "exact", head: true })
       .eq("teacher_id", teacher.id);
 
+    if (countError) {
+      throw new Error("Failed to check paper analysis count");
+    }
+
     if (count >= 5) {
       throw new Error(
-        "Trial limit reached. Please upgrade to continue analyzing papers."
+        "Trial limit reached (5 papers). Please upgrade to continue analyzing papers."
       );
     }
+  } else {
+    throw new Error("No active subscription or trial found");
   }
 
   return teacher;
@@ -87,6 +99,7 @@ export async function POST(req) {
       data: { user },
       error: authError,
     } = await supabaseClient.auth.getUser(token);
+
     if (authError || !user) {
       return NextResponse.json(
         { success: false, error: "Authentication required" },
@@ -94,7 +107,7 @@ export async function POST(req) {
       );
     }
 
-    // Get teacher profile and validate trial status
+    // Validate trial status and paper count
     const teacher = await validateTeacherAndTrial(user.id);
 
     // Get form data
@@ -202,9 +215,10 @@ export async function POST(req) {
 
     const statusCode =
       {
+        "Trial limit reached (5 papers). Please upgrade to continue analyzing papers.": 403,
         "Authentication required": 401,
         "Teacher profile not found": 404,
-        "Trial limit reached": 403,
+        "No active subscription or trial found": 403,
         "Missing required fields": 400,
       }[error.message] || 500;
 

@@ -477,16 +477,48 @@ export default function PaperAnalyzerPage() {
       </div>
     );
   }
+  function TrialUsageIndicator({ teacherId }) {
+    const [usedAnalyses, setUsedAnalyses] = useState(0);
+
+    useEffect(() => {
+      async function fetchUsage() {
+        const { count } = await supabase
+          .from("paper_analyses")
+          .select("id", { count: "exact", head: true })
+          .eq("teacher_id", teacherId);
+
+        setUsedAnalyses(count || 0);
+      }
+
+      fetchUsage();
+    }, [teacherId]);
+
+    return (
+      <div className="text-sm text-muted-foreground">
+        Trial usage: {usedAnalyses}/5 papers analyzed
+        {usedAnalyses >= 4 && (
+          <p className="text-yellow-600">
+            Warning: You have {5 - usedAnalyses} analysis
+            {5 - usedAnalyses === 1 ? "" : "es"} remaining in your trial
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-6">
       <h2 className="text-3xl font-bold tracking-tight">Paper Analyzer</h2>
+
       <Card>
         <CardHeader>
           <CardTitle>Paper Analyzer</CardTitle>
           <CardDescription>
             Upload a paper to analyze and grade it using AI assistance
           </CardDescription>
+          {teacherProfile?.subscription_status === "trialing" && (
+            <TrialUsageIndicator teacherId={teacherProfile.id} />
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Student Selection */}
