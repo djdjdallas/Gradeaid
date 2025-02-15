@@ -159,3 +159,11 @@ export async function POST(req) {
     );
   }
 }
+console.log("Creating checkout session with params:", {
+  customerId,
+  plan,
+  interval,
+  priceId: PRICE_IDS[interval],
+  successUrl: `${process.env.NEXT_PUBLIC_URL}/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}`,
+  cancelUrl: `${process.env.NEXT_PUBLIC_URL}/pricing?canceled=true`,
+});

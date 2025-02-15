@@ -11,20 +11,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Upload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-
+import { useRouter } from "next/navigation";
 // Import base components
 import { StudentSelect } from "../components/StudentSelect";
 import { SubjectSelect } from "../components/SubjectSelect";
 import { FileUpload } from "../components/FileUpload";
 
-// Import analysis components
-// import {
-//   AnalysisResults,
-//   QuestionAnalysis,
-//   TechnicalSkills,
-//   ConceptualUnderstanding,
-//   OverallAssessment,
-// } from "../components/AnalysisResults";
 import { AnalysisResults } from "../components/Analysis-Results";
 import { QuestionAnalysis } from "../components/Analysis-Results";
 import { TechnicalSkills } from "../components/Analysis-Results";
@@ -243,18 +235,30 @@ export default function PaperAnalyzerPage() {
       } = await supabase.auth.getSession();
 
       if (sessionError || !session?.access_token) {
+        console.error("Session error:", sessionError);
         throw new Error("Please sign in to analyze papers");
       }
+
+      // Log analysis attempt
+      console.log("Starting paper analysis:", {
+        studentId,
+        subject,
+        fileName: file?.name,
+        teacherId: teacherProfile?.id,
+      });
 
       // Read the file content
       const fileText = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target.result);
-        reader.onerror = (e) => reject(e);
+        reader.onerror = (e) => {
+          console.error("File read error:", e);
+          reject(new Error("Failed to read file"));
+        };
         reader.readAsText(file);
       });
 
-      // Create form data
+      // Create form data with logging
       const formData = new FormData();
       formData.append("file", file);
       formData.append("studentId", studentId);
@@ -262,7 +266,16 @@ export default function PaperAnalyzerPage() {
       formData.append("teacherId", teacherProfile.id);
       formData.append("originalText", fileText);
 
-      // Make request to our API route with fresh token
+      console.log("Sending analysis request with data:", {
+        fileName: file.name,
+        fileSize: file.size,
+        studentId,
+        subject,
+        teacherId: teacherProfile.id,
+        textLength: fileText.length,
+      });
+
+      // Make request to API route with fresh token
       const response = await fetch("/api/analyze", {
         method: "POST",
         body: formData,
@@ -273,28 +286,84 @@ export default function PaperAnalyzerPage() {
 
       const data = await response.json();
 
+      // Handle non-200 responses
       if (!response.ok) {
+        console.error("API error response:", {
+          status: response.status,
+          statusText: response.statusText,
+          data,
+        });
+
+        // Handle specific error cases
         if (response.status === 401) {
           await supabase.auth.signOut();
           window.location.href = "/login";
           throw new Error("Authentication expired. Please sign in again.");
         }
-        throw new Error(data.error || "Analysis failed");
+
+        if (response.status === 413) {
+          throw new Error("File too large. Please upload a smaller file.");
+        }
+
+        if (response.status === 429) {
+          throw new Error("Too many requests. Please try again later.");
+        }
+
+        throw new Error(
+          data.error || `Analysis failed: ${response.statusText}`
+        );
       }
+
+      // Validate API response
+      if (!data?.overallAssessment?.totalScore) {
+        console.error("Invalid API response:", data);
+        throw new Error("Invalid analysis result from API");
+      }
+
+      // Log successful analysis
+      console.log("Analysis completed successfully:", {
+        paperAnalysisId: data.paperAnalysisId,
+        score: data.overallAssessment.totalScore,
+        questionCount: data.questions?.length,
+      });
 
       // Set result and update UI
-      setResult({ ...data, originalText: fileText, subject: subject });
+      setResult({
+        ...data,
+        originalText: fileText,
+        subject: subject,
+      });
 
-      // Save analysis result if needed
+      // Save analysis result if API provided an ID
       if (data.paperAnalysisId) {
-        await saveAnalysisResult(data);
+        try {
+          await saveAnalysisResult(data);
+          toast.success("Paper analyzed and saved successfully");
+        } catch (saveError) {
+          console.error("Save error:", saveError);
+          toast.error("Analysis complete but failed to save results", {
+            description: "Your analysis results weren't saved to your history.",
+          });
+        }
+      } else {
+        toast.success("Paper analyzed successfully");
       }
-
-      toast.success("Paper analyzed successfully");
     } catch (error) {
-      console.error("Analysis error:", error);
+      console.error("Analysis error:", {
+        error,
+        message: error.message,
+        stack: error.stack,
+        context: {
+          studentId,
+          subject,
+          fileName: file?.name,
+          teacherId: teacherProfile?.id,
+        },
+      });
+
       setError(error.message);
 
+      // Handle specific error types
       if (error.message.includes("sign in")) {
         toast.error("Authentication Required", {
           description: error.message,
@@ -303,9 +372,19 @@ export default function PaperAnalyzerPage() {
             onClick: () => (window.location.href = "/login"),
           },
         });
+      } else if (error.message.includes("File too large")) {
+        toast.error("File Size Error", {
+          description: `Maximum file size is ${
+            MAX_FILE_SIZE / (1024 * 1024)
+          }MB`,
+        });
+      } else if (error.message.includes("Invalid analysis")) {
+        toast.error("Analysis Error", {
+          description: "Failed to process the paper. Please try again.",
+        });
       } else {
         toast.error("Analysis failed", {
-          description: error.message || "Please try again",
+          description: error.message || "An unexpected error occurred",
         });
       }
     } finally {
@@ -314,13 +393,25 @@ export default function PaperAnalyzerPage() {
   }
 
   async function saveAnalysisResult(analysisResult) {
-    if (!analysisResult?.overallAssessment?.totalScore) {
-      console.error("Invalid analysis result:", analysisResult);
-      return;
-    }
-
     try {
-      const { error } = await supabase.from("paper_analyses").insert({
+      // Validate the analysis result first
+      if (!analysisResult?.overallAssessment?.totalScore) {
+        console.error(
+          "Invalid analysis result:",
+          JSON.stringify(analysisResult, null, 2)
+        );
+        throw new Error("Invalid analysis result: Missing required fields");
+      }
+
+      // Log the data being sent
+      console.log("Saving analysis with data:", {
+        student_id: studentId,
+        teacher_id: teacherProfile.id,
+        subject: subject,
+        score: analysisResult.overallAssessment.totalScore,
+      });
+
+      const { data, error } = await supabase.from("paper_analyses").insert({
         student_id: studentId,
         teacher_id: teacherProfile.id,
         subject: subject,
@@ -385,19 +476,29 @@ export default function PaperAnalyzerPage() {
         },
       });
 
-      if (error) throw error;
-      console.log(
-        "Analysis saved to database with grading method:",
-        subject.toLowerCase() === "math" ? "accuracy_only" : "weighted_criteria"
-      );
+      if (error) {
+        console.error("Supabase error details:", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
+        throw new Error(`Database error: ${error.message}`);
+      }
 
+      console.log("Analysis saved successfully:", data);
       await updateStudentProgress(analysisResult);
     } catch (error) {
-      console.error("Error saving analysis:", error);
-      toast.error("Failed to save analysis results", {
-        description:
-          "The analysis completed but couldn't be saved to your history",
+      // Log detailed error information
+      console.error("Analysis save error:", {
+        error,
+        message: error.message,
+        stack: error.stack,
+        analysisResult: JSON.stringify(analysisResult, null, 2),
       });
+
+      // Re-throw with more context
+      throw new Error(`Failed to save analysis: ${error.message}`);
     }
   }
 
@@ -477,8 +578,10 @@ export default function PaperAnalyzerPage() {
       </div>
     );
   }
+
   function TrialUsageIndicator({ teacherId }) {
     const [usedAnalyses, setUsedAnalyses] = useState(0);
+    const router = useRouter(); // Add this import at the top of the file
 
     useEffect(() => {
       async function fetchUsage() {
@@ -494,14 +597,43 @@ export default function PaperAnalyzerPage() {
     }, [teacherId]);
 
     return (
-      <div className="text-sm text-muted-foreground">
-        Trial usage: {usedAnalyses}/5 papers analyzed
-        {usedAnalyses >= 4 && (
-          <p className="text-yellow-600">
-            Warning: You have {5 - usedAnalyses} analysis
-            {5 - usedAnalyses === 1 ? "" : "es"} remaining in your trial
-          </p>
-        )}
+      <div className="space-y-2">
+        <div className="text-sm text-muted-foreground">
+          Trial usage: {usedAnalyses}/5 papers analyzed
+        </div>
+        {usedAnalyses >= 5 ? (
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <p className="text-blue-800 font-medium">Trial limit reached</p>
+            <p className="text-sm text-blue-600 mt-1 mb-3">
+              Upgrade to continue analyzing papers and unlock all features.
+            </p>
+            <Button
+              onClick={() => router.push("/pricing")}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              View Pricing Plans
+            </Button>
+          </div>
+        ) : usedAnalyses >= 4 ? (
+          <div className="flex items-center justify-between bg-yellow-50 p-4 rounded-lg">
+            <p className="text-yellow-800">
+              <span className="font-medium">
+                Only {5 - usedAnalyses} analysis remaining
+              </span>
+              <br />
+              <span className="text-sm">
+                Consider upgrading to continue using GradeAid
+              </span>
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => router.push("/pricing")}
+              className="ml-4"
+            >
+              View Plans
+            </Button>
+          </div>
+        ) : null}
       </div>
     );
   }

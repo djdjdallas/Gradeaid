@@ -10,11 +10,16 @@ export async function middleware(req) {
   } = await supabase.auth.getSession();
 
   // Public routes that don't need auth
-  const publicRoutes = ["/login", "/signup", "/pricing", "/about"];
+  const publicRoutes = ["/login", "/signup", "/about"]; // Remove "/pricing" from here
   if (publicRoutes.includes(req.nextUrl.pathname)) {
     if (session) {
       return NextResponse.redirect(new URL("/dashboard", req.url));
     }
+    return res;
+  }
+
+  // Special case for pricing page - allow both authenticated and unauthenticated users
+  if (req.nextUrl.pathname === "/pricing") {
     return res;
   }
 

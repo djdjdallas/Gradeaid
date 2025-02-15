@@ -12,6 +12,7 @@ import {
   FileText,
   ClipboardPen,
   HelpCircle,
+  FilePlus,
 } from "lucide-react";
 
 const sidebarItems = [
@@ -44,6 +45,11 @@ const sidebarItems = [
     title: "Analytics",
     href: "/dashboard/analytics",
     icon: BarChart,
+  },
+  {
+    title: "Test Generator",
+    href: "/dashboard/test-generator",
+    icon: FilePlus,
   },
   {
     title: "Settings",
