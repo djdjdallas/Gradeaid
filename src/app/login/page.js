@@ -6,13 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, Chrome } from "lucide-react";
+import { CheckCircle2, Chrome, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { loadStripe } from "@stripe/stripe-js";
-
-const stripePromise = loadStripe(
-  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-);
 
 const LoginPage = () => {
   const [email, setEmail] = useState("");
@@ -26,107 +21,130 @@ const LoginPage = () => {
 
   useEffect(() => {
     const checkSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        console.log("Current session:", session);
 
-      if (session?.user?.email_confirmed_at) {
-        // Check for subscription intent
-        const subscriptionIntent = localStorage.getItem("subscription_intent");
-        if (subscriptionIntent) {
-          handleStoredSubscription(subscriptionIntent);
-        } else {
-          router.push("/dashboard");
+        if (session?.user?.email_confirmed_at) {
+          // Check for stored subscription intent
+          const subscriptionIntent = localStorage.getItem(
+            "subscription_intent"
+          );
+          console.log("Found subscription intent:", subscriptionIntent);
+
+          if (subscriptionIntent) {
+            // If there's a subscription intent, handle checkout
+            const { plan, interval } = JSON.parse(subscriptionIntent);
+
+            // Create checkout session
+            const response = await fetch("/api/stripe/create-checkout", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ plan, interval }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+              throw new Error(
+                data.error || "Failed to create checkout session"
+              );
+            }
+
+            // Clear subscription intent before redirect
+            localStorage.removeItem("subscription_intent");
+
+            // Redirect to Stripe checkout
+            window.location.href = data.redirectUrl;
+          } else {
+            // No subscription intent, go to dashboard
+            router.push("/dashboard");
+          }
+        } else if (session?.user && !session.user.email_confirmed_at) {
+          toast.error("Please verify your email to continue");
         }
-      } else if (session?.user && !session.user.email_confirmed_at) {
-        toast.error("Please verify your email to continue");
+      } catch (error) {
+        console.error("Session check error:", error);
+        toast.error("Failed to check session");
+        router.push("/dashboard");
       }
     };
 
     checkSession();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "SIGNED_IN") {
-        if (session?.user?.email_confirmed_at) {
-          // Check for subscription intent on sign in
-          const subscriptionIntent = localStorage.getItem(
-            "subscription_intent"
-          );
-          if (subscriptionIntent) {
-            handleStoredSubscription(subscriptionIntent);
-          } else {
-            router.push("/dashboard");
-          }
-        } else {
-          toast.error("Please verify your email to continue");
-        }
-      } else if (
-        event === "USER_UPDATED" &&
-        session?.user?.email_confirmed_at
-      ) {
-        toast.success("Email verified successfully!");
-        const subscriptionIntent = localStorage.getItem("subscription_intent");
-        if (subscriptionIntent) {
-          handleStoredSubscription(subscriptionIntent);
-        } else {
-          router.push("/dashboard");
-        }
-      }
-    });
-
-    return () => subscription.unsubscribe();
   }, [router]);
 
-  const handleStoredSubscription = async (subscriptionIntent) => {
+  const handleStoredSubscription = async (session) => {
     try {
-      const { plan, interval } = JSON.parse(subscriptionIntent);
-      localStorage.removeItem("subscription_intent");
+      console.log("Processing stored subscription...");
+      const subscriptionIntent = localStorage.getItem("subscription_intent");
 
+      if (!subscriptionIntent) {
+        console.log("No subscription intent found");
+        return;
+      }
+
+      const { plan, interval } = JSON.parse(subscriptionIntent);
+      console.log("Subscription details:", { plan, interval });
+
+      // Create checkout session
       const response = await fetch("/api/stripe/create-checkout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ plan, interval }),
       });
 
+      console.log("Checkout response status:", response.status);
+      const data = await response.json();
+      console.log("Checkout response data:", data);
+
       if (!response.ok) {
-        throw new Error("Failed to create checkout session");
+        throw new Error(data.error || "Failed to create checkout session");
       }
 
-      const { sessionId } = await response.json();
-      const stripe = await stripePromise;
+      // Clear subscription intent before redirect
+      localStorage.removeItem("subscription_intent");
 
-      if (!stripe) {
-        throw new Error("Stripe failed to initialize");
-      }
-
-      const { error } = await stripe.redirectToCheckout({ sessionId });
-      if (error) throw error;
+      // Redirect to Stripe checkout
+      window.location.href = data.redirectUrl;
     } catch (error) {
-      console.error("Post-login subscription error:", error);
-      toast.error("Failed to process subscription");
+      console.error("Subscription error:", error);
+      toast.error("Failed to process subscription", {
+        description: error.message,
+      });
+      localStorage.removeItem("subscription_intent");
       router.push("/dashboard");
     }
   };
 
   const resendVerificationEmail = async (email) => {
-    const { error } = await supabase.auth.resendConfirmationEmail({
-      email,
-    });
-    if (!error) {
-      toast.success("Verification email resent!");
-    } else {
+    try {
+      const { error } = await supabase.auth.resendConfirmationEmail({
+        email,
+      });
+      if (!error) {
+        toast.success("Verification email resent!");
+      } else {
+        throw error;
+      }
+    } catch (error) {
+      console.error("Email resend error:", error);
       toast.error("Failed to resend verification email");
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
-
     try {
+      setLoading(true);
+      setError(null);
+
       if (isLogin) {
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
@@ -145,50 +163,48 @@ const LoginPage = () => {
           return;
         }
 
-        // Let the useEffect handle the redirect and subscription
-        return;
-      }
+        // Let the useEffect handle redirect and subscription
+      } else {
+        // Handle signup
+        const { data: authData, error: authError } = await supabase.auth.signUp(
+          {
+            email,
+            password,
+            options: {
+              emailRedirectTo: `${window.location.origin}/auth/callback`,
+              data: {
+                full_name: name || email.split("@")[0],
+              },
+            },
+          }
+        );
 
-      // Handle signup
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-          data: {
-            full_name: email.split("@")[0],
-          },
-        },
-      });
+        if (authError) throw authError;
 
-      if (authError) throw authError;
+        if (authData.user) {
+          const { error: profileError } = await supabase
+            .from("teachers")
+            .insert({
+              user_id: authData.user.id,
+              full_name: name,
+              email: email,
+            });
 
-      if (authData.user) {
-        const { error: profileError } = await supabase.from("teachers").insert({
-          user_id: authData.user.id,
-          full_name: name,
-          email: email,
-        });
+          if (profileError) {
+            console.error("Profile creation error:", profileError);
+            await supabase.auth.signOut();
+            throw new Error("Failed to create teacher profile");
+          }
 
-        if (profileError) {
-          console.error(
-            "Profile creation error:",
-            JSON.stringify(profileError, null, 2)
-          );
-          await supabase.auth.signOut();
-          throw new Error(
-            `Failed to create profile: ${JSON.stringify(profileError)}`
-          );
+          setShowConfirmation(true);
+          setEmail("");
+          setPassword("");
+          toast.success("Account created successfully!");
         }
-
-        setShowConfirmation(true);
-        setEmail("");
-        setPassword("");
-
-        toast.success("Account created successfully!");
       }
     } catch (error) {
       console.error("Auth error:", error);
+      setError(error.message);
       toast.error(error.message);
     } finally {
       setLoading(false);
@@ -319,11 +335,16 @@ const LoginPage = () => {
                 )}
 
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading
-                    ? "Please wait..."
-                    : isLogin
-                    ? "Sign In"
-                    : "Create Account"}
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Please wait...
+                    </>
+                  ) : isLogin ? (
+                    "Sign In"
+                  ) : (
+                    "Create Account"
+                  )}
                 </Button>
               </form>
 

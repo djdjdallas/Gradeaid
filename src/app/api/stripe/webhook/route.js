@@ -1,4 +1,4 @@
-// api/stripe/webhook/route.js
+// app/api/stripe/webhook/route.js
 import { stripe } from "@/lib/stripe";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
@@ -17,9 +17,18 @@ export async function POST(req) {
     const supabase = createRouteHandlerClient({ cookies });
 
     switch (event.type) {
-      case "customer.subscription.created":
-      case "customer.subscription.updated":
-        const subscription = event.data.object;
+      case "payment_intent.succeeded":
+        const paymentIntent = event.data.object;
+        // Create subscription from the successful payment
+        const subscription = await stripe.subscriptions.create({
+          customer: paymentIntent.customer,
+          items: [
+            {
+              price: PRICE_IDS[paymentIntent.metadata.interval],
+            },
+          ],
+          metadata: paymentIntent.metadata,
+        });
 
         // Update teacher subscription status
         await supabase
@@ -37,10 +46,32 @@ export async function POST(req) {
           .eq("stripe_customer_id", subscription.customer);
         break;
 
-      case "customer.subscription.trial_will_end":
-        // Send notification email about trial ending
-        const trialEndSubscription = event.data.object;
-        // Add your email notification logic here
+      case "customer.subscription.updated":
+        const updatedSubscription = event.data.object;
+        await supabase
+          .from("teachers")
+          .update({
+            subscription_status: updatedSubscription.status,
+            subscription_period_end: updatedSubscription.current_period_end
+              ? new Date(
+                  updatedSubscription.current_period_end * 1000
+                ).toISOString()
+              : null,
+          })
+          .eq("stripe_customer_id", updatedSubscription.customer);
+        break;
+
+      case "customer.subscription.deleted":
+        const deletedSubscription = event.data.object;
+        await supabase
+          .from("teachers")
+          .update({
+            subscription_status: "inactive",
+            subscription_id: null,
+            trial_ends_at: null,
+            subscription_period_end: null,
+          })
+          .eq("stripe_customer_id", deletedSubscription.customer);
         break;
     }
 

@@ -26,6 +26,8 @@ const PRICING_PLANS = {
       "AI-powered grading (5 papers)",
       "Basic analytics dashboard",
       "Up to 10 students",
+      "Basic student progress tracking",
+      "Single subject test generation (3 tests)",
     ],
   },
   pro: {
@@ -37,7 +39,13 @@ const PRICING_PLANS = {
       "Unlimited AI grading",
       "Advanced analytics & insights",
       "Unlimited students",
-      "Student progress tracking",
+      "Comprehensive student progress tracking",
+      "Personalized study guides",
+      "AI-powered test generation",
+      "Custom test templates",
+      "Study progress monitoring",
+      "Subject-specific learning paths",
+      "Performance-based content adaptation",
       "Priority support",
     ],
   },
@@ -49,6 +57,11 @@ const PRICING_PLANS = {
       "Everything in Pro plan",
       "School-wide analytics",
       "Admin dashboard",
+      "Curriculum alignment tools",
+      "Advanced study guide customization",
+      "Department-wide test sharing",
+      "Cross-subject learning paths",
+      "Student performance benchmarking",
       "LMS integrations",
       "Dedicated support",
     ],
@@ -167,11 +180,13 @@ export default function PricingSection() {
             Simple, Transparent Pricing
           </h2>
           <p className="text-blue-700">
-            Choose the plan that fits your teaching needs. No hidden fees,
-            cancel anytime.
+            Choose the plan that fits your teaching needs. Each plan now
+            includes our new personalized study guides and AI test generation
+            features.
           </p>
         </div>
 
+        {/* Billing Interval Selector */}
         <div className="flex justify-center mb-8">
           <div className="bg-blue-50 p-1 rounded-lg inline-flex">
             <button
@@ -197,6 +212,7 @@ export default function PricingSection() {
           </div>
         </div>
 
+        {/* Pricing Cards */}
         <div className="grid gap-8 md:grid-cols-3 max-w-screen-xl mx-auto">
           {/* Free Trial Card */}
           <Card className="relative flex flex-col border-blue-100 hover:border-blue-200 transition-colors duration-300">

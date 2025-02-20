@@ -1,8 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-import { loadStripe } from "@stripe/stripe-js";
+import StripePaymentForm from "@/components/StripePaymentForm";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardHeader,
@@ -10,74 +12,103 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { CheckCircle, Loader2, AlertCircle } from "lucide-react";
-import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { toast } from "sonner";
+
+// Updated pricing data with new features
+const PRICING_PLANS = {
+  trial: {
+    name: "Free Trial",
+    description: "Try GradeAid risk-free",
+    price: 0,
+    period: "14 days",
+    features: [
+      "AI-powered grading (5 papers)",
+      "Basic analytics dashboard",
+      "Up to 10 students",
+      "Basic student progress tracking",
+      "Single subject test generation (3 tests)",
+    ],
+  },
+  pro: {
+    name: "Pro",
+    description: "For individual teachers",
+    monthlyPrice: 9.99,
+    yearlyPrice: 99.99,
+    features: [
+      "Unlimited AI grading",
+      "Advanced analytics & insights",
+      "Unlimited students",
+      "Comprehensive student progress tracking",
+      "Personalized study guides",
+      "AI-powered test generation",
+      "Custom test templates",
+      "Study progress monitoring",
+      "Subject-specific learning paths",
+      "Performance-based content adaptation",
+      "Priority support",
+    ],
+  },
+  school: {
+    name: "School",
+    description: "For entire schools & districts",
+    price: "Custom",
+    features: [
+      "Everything in Pro plan",
+      "School-wide analytics",
+      "Admin dashboard",
+      "Curriculum alignment tools",
+      "Advanced study guide customization",
+      "Department-wide test sharing",
+      "Cross-subject learning paths",
+      "Student performance benchmarking",
+      "LMS integrations",
+      "Dedicated support",
+    ],
+  },
+};
 
 export default function PricingPage() {
-  const [stripe, setStripe] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [billingInterval, setBillingInterval] = useState("monthly");
+  const [clientSecret, setClientSecret] = useState(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [error, setError] = useState(null);
   const router = useRouter();
   const supabase = createClientComponentClient();
 
-  // Initialize Stripe when component mounts
-  useEffect(() => {
-    const initializeStripe = async () => {
-      console.log("Initializing Stripe...");
-
-      if (!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) {
-        console.error("Stripe publishable key is missing");
-        setError("Stripe configuration error");
-        return;
-      }
-
-      try {
-        const stripeInstance = await loadStripe(
-          process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-        );
-        console.log("Stripe initialized successfully");
-        setStripe(stripeInstance);
-      } catch (error) {
-        console.error("Failed to initialize Stripe:", error);
-        setError("Failed to initialize payment system");
-      }
-    };
-
-    initializeStripe();
-  }, []);
-
-  const handleSubscribe = async (plan) => {
+  const handleStartTrial = async () => {
     try {
-      setIsLoading(true);
-      setError(null);
-
-      if (!stripe) {
-        throw new Error("Payment system not initialized");
-      }
-
-      // Get auth session
       const {
         data: { session },
         error: authError,
       } = await supabase.auth.getSession();
 
       if (authError || !session) {
-        console.log("Auth error or no session:", { authError, session });
-        router.push("/login");
+        localStorage.setItem("intended_action", "trial");
+        router.push("/signup");
         return;
       }
 
-      console.log("Creating checkout session...");
+      router.push("/dashboard");
+    } catch (error) {
+      console.error("Trial start error:", error);
+      toast.error("Failed to start trial");
+    }
+  };
 
-      // Create checkout session with auth header
+  // In PricingPage.js
+  const handleSubscribe = async (plan) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // Create checkout session directly without auth check
       const response = await fetch("/api/stripe/create-checkout", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`, // Add this line
         },
         body: JSON.stringify({
           plan,
@@ -86,39 +117,34 @@ export default function PricingPage() {
       });
 
       const data = await response.json();
+      console.log("Checkout response:", data);
 
       if (!response.ok) {
-        console.error("Checkout error response:", data);
-        if (data.error === "Already subscribed" && data.redirect) {
-          router.push(data.redirect);
-          return;
-        }
         throw new Error(data.error || "Failed to create checkout session");
       }
 
-      console.log("Checkout session created successfully:", data);
-
-      // Redirect to checkout
-      const { error: stripeError } = await stripe.redirectToCheckout({
-        sessionId: data.sessionId,
-      });
-
-      if (stripeError) {
-        console.error("Stripe redirect error:", stripeError);
-        throw stripeError;
-      }
+      // Redirect to Stripe checkout
+      window.location.href = data.redirectUrl;
     } catch (error) {
-      console.error("Subscription error:", {
-        message: error.message,
-        error,
-      });
-      setError(error.message || "Failed to start subscription process");
-      toast.error("Subscription Error", {
-        description: error.message || "Please try again later",
+      console.error("Subscription error:", error);
+      setError(error.message);
+      toast.error("Failed to start subscription", {
+        description: error.message,
       });
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePaymentSuccess = () => {
+    toast.success("Payment successful!");
+    router.push("/dashboard");
+  };
+
+  const handlePaymentError = (error) => {
+    toast.error("Payment failed", {
+      description: error.message || "Please try again",
+    });
   };
 
   return (
@@ -130,8 +156,9 @@ export default function PricingPage() {
             Simple, Transparent Pricing
           </h1>
           <p className="text-blue-700">
-            Choose the plan that fits your teaching needs. No hidden fees,
-            cancel anytime.
+            Choose the plan that fits your teaching needs. Now featuring
+            personalized study guides and AI test generation for comprehensive
+            student support.
           </p>
         </div>
 
@@ -144,7 +171,7 @@ export default function PricingPage() {
           </Alert>
         )}
 
-        {/* Billing Interval Selector */}
+        {/* Billing Interval Toggle */}
         <div className="flex justify-center mb-8">
           <div className="bg-blue-50 p-1 rounded-lg inline-flex">
             <button
@@ -175,9 +202,11 @@ export default function PricingPage() {
           {/* Free Trial Card */}
           <Card className="relative flex flex-col border-blue-100 hover:border-blue-200 transition-colors duration-300">
             <CardHeader>
-              <CardTitle className="text-blue-900">Free Trial</CardTitle>
+              <CardTitle className="text-blue-900">
+                {PRICING_PLANS.trial.name}
+              </CardTitle>
               <CardDescription className="text-blue-600">
-                Try GradeAid risk-free
+                {PRICING_PLANS.trial.description}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col">
@@ -186,23 +215,17 @@ export default function PricingPage() {
                 <span className="text-blue-600 ml-2">/14 days</span>
               </div>
               <ul className="space-y-3 mb-6 flex-1 text-blue-700">
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>AI-powered grading for 5 assignments</span>
-                </li>
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>Basic analytics dashboard</span>
-                </li>
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>Up to 10 students</span>
-                </li>
+                {PRICING_PLANS.trial.features.map((feature, index) => (
+                  <li key={index} className="flex items-center">
+                    <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
               </ul>
               <Button
                 variant="outline"
                 className="w-full mt-auto border-blue-600 text-blue-600 hover:bg-blue-50"
-                onClick={() => router.push("/dashboard")}
+                onClick={handleStartTrial}
               >
                 Start Free Trial
               </Button>
@@ -215,9 +238,11 @@ export default function PricingPage() {
               Most Popular
             </div>
             <CardHeader>
-              <CardTitle className="text-blue-900">Pro</CardTitle>
+              <CardTitle className="text-blue-900">
+                {PRICING_PLANS.pro.name}
+              </CardTitle>
               <CardDescription className="text-blue-600">
-                For individual teachers
+                {PRICING_PLANS.pro.description}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col">
@@ -225,45 +250,31 @@ export default function PricingPage() {
                 {billingInterval === "monthly" ? (
                   <>
                     <span className="text-4xl font-bold text-blue-900">
-                      $9.99
+                      ${PRICING_PLANS.pro.monthlyPrice}
                     </span>
                     <span className="text-blue-600 ml-2">/month</span>
                   </>
                 ) : (
                   <>
                     <span className="text-4xl font-bold text-blue-900">
-                      $99.99
+                      ${PRICING_PLANS.pro.yearlyPrice}
                     </span>
                     <span className="text-blue-600 ml-2">/year</span>
                   </>
                 )}
               </div>
               <ul className="space-y-3 mb-6 flex-1 text-blue-700">
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>Unlimited AI-powered grading</span>
-                </li>
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>Advanced analytics & insights</span>
-                </li>
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>Unlimited students</span>
-                </li>
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>Student progress tracking</span>
-                </li>
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>Priority email support</span>
-                </li>
+                {PRICING_PLANS.pro.features.map((feature, index) => (
+                  <li key={index} className="flex items-center">
+                    <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
               </ul>
               <Button
                 className="w-full mt-auto bg-blue-600 hover:bg-blue-700 text-white"
                 onClick={() => handleSubscribe("pro")}
-                disabled={isLoading || !stripe}
+                disabled={isLoading}
               >
                 {isLoading ? (
                   <>
@@ -280,9 +291,11 @@ export default function PricingPage() {
           {/* School Plan Card */}
           <Card className="relative flex flex-col border-blue-100 hover:border-blue-200 transition-colors duration-300">
             <CardHeader>
-              <CardTitle className="text-blue-900">School</CardTitle>
+              <CardTitle className="text-blue-900">
+                {PRICING_PLANS.school.name}
+              </CardTitle>
               <CardDescription className="text-blue-600">
-                For entire schools & districts
+                {PRICING_PLANS.school.description}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col">
@@ -290,26 +303,12 @@ export default function PricingPage() {
                 <span className="text-4xl font-bold text-blue-900">Custom</span>
               </div>
               <ul className="space-y-3 mb-6 flex-1 text-blue-700">
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>Everything in Pro plan</span>
-                </li>
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>School-wide analytics</span>
-                </li>
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>Admin dashboard</span>
-                </li>
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>Custom integrations</span>
-                </li>
-                <li className="flex items-center">
-                  <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
-                  <span>Dedicated account manager</span>
-                </li>
+                {PRICING_PLANS.school.features.map((feature, index) => (
+                  <li key={index} className="flex items-center">
+                    <CheckCircle className="h-5 w-5 mr-2 text-blue-600 flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
               </ul>
               <Button
                 variant="outline"
@@ -328,8 +327,23 @@ export default function PricingPage() {
             All plans include a 14-day free trial. No credit card required to
             start.
           </p>
+          <p className="text-sm text-blue-600 mt-2">
+            Our new AI-powered study guides and test generation features help
+            provide personalized learning experiences for every student.
+          </p>
         </div>
       </div>
+
+      {/* Payment Modal */}
+      <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
+        <DialogContent className="sm:max-w-[600px]">
+          <StripePaymentForm
+            clientSecret={clientSecret}
+            onSuccess={handlePaymentSuccess}
+            onError={handlePaymentError}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
